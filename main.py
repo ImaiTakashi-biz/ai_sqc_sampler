@@ -74,6 +74,9 @@ class MainController:
             'conf_str': self.app.sample_conf_entry.get().strip() or "99",
             'c_str': self.app.sample_c_entry.get().strip() or "0"
         }
+        if not inputs['product_number']:
+            messagebox.showwarning("入力エラー", "品番を入力してください。")
+            return None
         try:
             inputs['lot_size'] = int(inputs['lot_size_str'])
             inputs['conf'] = float(inputs['conf_str']) / 100
