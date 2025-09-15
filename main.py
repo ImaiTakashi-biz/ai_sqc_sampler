@@ -201,15 +201,22 @@ class MainController:
                 if inputs['c'] == 0:
                     n_sample = math.ceil(math.log(1 - inputs['conf']) / math.log(1 - p))
                 else:
-                    n = 1
-                    limit = max(inputs['lot_size'] * 2, 10000)
-                    while n <= limit:
-                        if binom.cdf(inputs['c'], n, p) >= 1 - inputs['conf']:
-                            n_sample = n
-                            break
-                        n += 1
-                    else:
-                        n_sample = f">{limit} (計算断念)"
+                    low = 1
+                    high = max(inputs['lot_size'] * 2, 10000) # Use the existing limit as upper bound
+                    n_sample = f">{high} (計算断念)" # Default to calculation failure
+
+                    # Binary search for n_sample
+                    while low <= high:
+                        mid = (low + high) // 2
+                        if mid == 0: # Avoid division by zero or invalid n
+                            low = 1
+                            continue
+                        
+                        if binom.cdf(inputs['c'], mid, p) >= 1 - inputs['conf']:
+                            n_sample = mid
+                            high = mid - 1 # Try to find a smaller n
+                        else:
+                            low = mid + 1 # Need a larger n
             except (ValueError, OverflowError):
                 n_sample = "計算エラー"
         results['sample_size'] = n_sample
