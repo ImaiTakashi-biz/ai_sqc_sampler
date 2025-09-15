@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk
-from tkinter import messagebox
+from tkinter import messagebox, filedialog
 import pyodbc
 import configparser
 import os
@@ -8,8 +8,9 @@ from scipy.stats import binom
 import math
 import threading
 from gui import App
+from matplotlib.figure import Figure
+import numpy as np
 
-# --- 定数 ---
 CONFIG_FILE = 'config.ini'
 DB_FILE_PATH_KEY = 'path'
 DB_SECTION = 'DATABASE'
@@ -24,11 +25,13 @@ class MainController:
         self.app = App(self)
         self.progress_window = None
         self.detail_label = None
+        self.last_db_data = None
+        self.last_stats_results = None
+        self.last_inputs = None
 
     def run(self):
         self.app.mainloop()
 
-    # --- 設定管理 & DB接続 ---
     def _create_default_config(self):
         config = configparser.ConfigParser()
         config[DB_SECTION] = {DB_FILE_PATH_KEY: DEFAULT_DB_PATH}
@@ -55,7 +58,6 @@ class MainController:
             messagebox.showerror("データベース接続エラー", f"エラーが発生しました: {sqlstate}\n{ex}")
             return None
 
-    # --- 計算ロジック ---
     def start_calculation_thread(self):
         inputs = self._get_user_inputs()
         if not inputs:
@@ -87,61 +89,48 @@ class MainController:
         return inputs
 
     def _setup_progress_window(self):
-        self.app.calc_button.config(state='disabled', text="🔄 計算中...", bg="#6c757d")
+        self.app.calc_button.config(state='disabled', text="🔄 計算中...", bg=self.app.MEDIUM_GRAY)
         self.progress_window = tk.Toplevel(self.app)
         self.progress_window.title("AI計算中")
         self.progress_window.geometry("400x200")
         self.progress_window.configure(bg=self.app.LIGHT_GRAY)
         self.progress_window.resizable(False, False)
-        x = (self.app.winfo_screenwidth() // 2) - (200)
-        y = (self.app.winfo_screenheight() // 2) - (100)
+        x = (self.app.winfo_screenwidth() // 2) - 200
+        y = (self.app.winfo_screenheight() // 2) - 100
         self.progress_window.geometry(f"400x200+{x}+{y}")
-        
         progress_bar = ttk.Progressbar(self.progress_window, mode='indeterminate', length=300)
         progress_bar.pack(pady=20)
         progress_bar.start()
-
         tk.Label(self.progress_window, text="🤖 AIが統計計算を開始しました...", font=("Meiryo", 12, "bold"), fg=self.app.DARK_GRAY, bg=self.app.LIGHT_GRAY).pack(pady=10)
         self.detail_label = tk.Label(self.progress_window, text="データベースから過去の不具合データを分析中", font=("Meiryo", 10), fg=self.app.MEDIUM_GRAY, bg=self.app.LIGHT_GRAY)
         self.detail_label.pack(pady=5)
-        
         self.app.result_var.set("")
         self.app.review_var.set("")
         self.app.best3_var.set("")
-        for widget_name in ['main_sample_label', 'level_label', 'reason_label', 'advice_label']:
-            if hasattr(self.app, widget_name):
-                widget = getattr(self.app, widget_name)
-                if widget:
-                    widget.destroy()
         self.app.update_idletasks()
 
     def _calculation_worker(self, inputs):
         try:
             self.app.after(0, lambda: self.detail_label.config(text="データベースに接続中..."))
             conn = self._get_db_connection()
-            if not conn:
-                raise ConnectionError("DB接続に失敗")
-
+            if not conn: raise ConnectionError("DB接続に失敗")
             with conn.cursor() as cursor:
                 self.app.after(0, lambda: self.detail_label.config(text="不具合データを集計中..."))
                 db_data = self._fetch_data(cursor, inputs)
-                
                 self.app.after(0, lambda: self.detail_label.config(text="抜取検査数を計算中..."))
                 stats_results = self._calculate_stats(db_data, inputs)
-            
             self.app.after(0, lambda: self.detail_label.config(text="結果を表示中..."))
             self.app.after(0, self._update_ui, db_data, stats_results, inputs)
             self.app.after(0, self._finish_calculation, True)
-
         except Exception as e:
             if "DB接続に失敗" not in str(e):
-                 self.app.after(0, lambda: messagebox.showerror("計算エラー", f"バックグラウンド処理中にエラーが発生しました: {e}"))
+                self.app.after(0, lambda: messagebox.showerror("計算エラー", f"バックグラウンド処理中にエラーが発生しました: {e}"))
             self.app.after(0, self._finish_calculation, False)
 
     def _finish_calculation(self, success):
         if self.progress_window and self.progress_window.winfo_exists():
             self.progress_window.destroy()
-        self.app.calc_button.config(state='normal', text="🚀 計算実行", bg="#007bff")
+        self.app.calc_button.config(state='normal', text="🚀 計算実行", bg=self.app.PRIMARY_BLUE)
         if success:
             messagebox.showinfo("計算完了", "✅ AIが統計分析を完了しました！")
 
@@ -150,32 +139,32 @@ class MainController:
         params = [inputs['product_number']]
         has_where = ' where ' in base_sql.lower()
         if inputs['start_date']:
-            sql_parts.append(f"{'AND' if has_where else 'WHERE'} [指示日] >= ?")
+            sql_parts.append(f"{ 'AND' if has_where else 'WHERE'} [指示日] >= ?")
             params.append(inputs['start_date'])
             has_where = True
         if inputs['end_date']:
-            sql_parts.append(f"{'AND' if has_where else 'WHERE'} [指示日] <= ?")
+            sql_parts.append(f"{ 'AND' if has_where else 'WHERE'} [指示日] <= ?")
             params.append(inputs['end_date'])
         return " ".join(sql_parts), params
 
     def _fetch_data(self, cursor, inputs):
-        data = {}
-        sql, params = self._build_sql_query("SELECT SUM([数量]), SUM([総不具合数]) FROM t_不具合情報 WHERE [品番] = ?", inputs)
-        sum_row = cursor.execute(sql, *params).fetchone()
-        data['total_qty'] = sum_row[0] or 0
-        data['total_defect'] = sum_row[1] or 0
-        data['defect_rate'] = (data['total_defect'] / data['total_qty'] * 100) if data['total_qty'] else 0
-
-        columns_str = ", ".join(f"SUM(IIF([{col}] IS NOT NULL AND [{col}]<>0, [{col}], 0))" for col in DEFECT_COLUMNS)
-        sql, params = self._build_sql_query(f"SELECT {columns_str} FROM t_不具合情報 WHERE [品番] = ?", inputs)
-        defect_counts = cursor.execute(sql, *params).fetchone()
-        
+        data = {'total_qty': 0, 'total_defect': 0, 'defect_rate': 0, 'defect_rates_sorted': [], 'best5': []}
+        defect_columns_sum = ", ".join(f"SUM(IIF([{col}] IS NOT NULL AND [{col}]<>0, [{col}], 0))" for col in DEFECT_COLUMNS)
+        base_sql = f"SELECT SUM([数量]), SUM([総不具合数]), {defect_columns_sum} FROM t_不具合情報 WHERE [品番] = ?"
+        sql, params = self._build_sql_query(base_sql, inputs)
+        row = cursor.execute(sql, *params).fetchone()
+        if not row or row[0] is None: return data
+        total_qty, total_defect = row[0] or 0, row[1] or 0
+        data['total_qty'] = total_qty
+        data['total_defect'] = total_defect
+        data['defect_rate'] = (total_defect / total_qty * 100) if total_qty > 0 else 0
+        defect_counts = row[2:]
         defect_rates = []
-        if data['total_qty'] > 0 and defect_counts:
+        if total_qty > 0 and defect_counts:
             for col, count in zip(DEFECT_COLUMNS, defect_counts):
                 count = count or 0
                 if count > 0:
-                    rate = (count / data['total_qty'] * 100)
+                    rate = (count / total_qty * 100)
                     defect_rates.append((col, rate, count))
         defect_rates.sort(key=lambda x: x[2], reverse=True)
         data['defect_rates_sorted'] = defect_rates
@@ -194,90 +183,153 @@ class MainController:
         else:
             results['level_text'] = "きつい(III)"
             results['level_reason'] = "過去の不具合率が0.5%を超えていたため、きつい水準（III）を適用しています。"
-        
         n_sample = "計算不可"
         if p > 0 and 0 < inputs['conf'] < 1:
             try:
                 if inputs['c'] == 0:
                     n_sample = math.ceil(math.log(1 - inputs['conf']) / math.log(1 - p))
                 else:
-                    low = 1
-                    high = max(inputs['lot_size'] * 2, 10000) # Use the existing limit as upper bound
-                    n_sample = f">{high} (計算断念)" # Default to calculation failure
-
-                    # Binary search for n_sample
+                    low, high = 1, max(inputs['lot_size'] * 2, 10000)
+                    n_sample = f">{high} (計算断念)"
                     while low <= high:
                         mid = (low + high) // 2
-                        if mid == 0: # Avoid division by zero or invalid n
-                            low = 1
-                            continue
-                        
+                        if mid == 0: low = 1; continue
                         if binom.cdf(inputs['c'], mid, p) >= 1 - inputs['conf']:
-                            n_sample = mid
-                            high = mid - 1 # Try to find a smaller n
+                            n_sample, high = mid, mid - 1
                         else:
-                            low = mid + 1 # Need a larger n
-            except (ValueError, OverflowError):
-                n_sample = "計算エラー"
+                            low = mid + 1
+            except (ValueError, OverflowError): n_sample = "計算エラー"
         results['sample_size'] = n_sample
         return results
 
     def _update_ui(self, db_data, stats_results, inputs):
-        def format_int(n):
-            try: return f"{int(n):,}"
-            except (ValueError, TypeError): return str(n)
+        self._clear_previous_results()
+        self.last_db_data, self.last_stats_results, self.last_inputs = db_data, stats_results, inputs
+        texts = self._generate_result_texts(db_data, stats_results, inputs)
+        self._display_main_results(stats_results, texts['advice'])
+        self._display_detailed_results(texts)
 
-        sample_size_disp = format_int(stats_results['sample_size'])
-        
-        # 以前のウィジェットを破棄
+    def _clear_previous_results(self):
         for widget_name in ['main_sample_label', 'level_label', 'reason_label', 'advice_label']:
-            if hasattr(self.app, widget_name):
-                widget = getattr(self.app, widget_name)
-                if widget:
-                    widget.destroy()
+            if hasattr(self.app, widget_name) and (widget := getattr(self.app, widget_name)): widget.destroy()
+        self.app.review_frame.pack_forget()
+        self.app.best3_frame.pack_forget()
+        if hasattr(self.app, 'hide_export_button'): self.app.hide_export_button()
+        self.last_db_data, self.last_stats_results, self.last_inputs = None, None, None
 
+    def _format_int(self, n):
+        try: return f"{int(n):,}"
+        except (ValueError, TypeError): return str(n)
+
+    def _generate_result_texts(self, db_data, stats_results, inputs):
+        sample_size_disp = self._format_int(stats_results['sample_size'])
+        period_text = f"（{inputs['start_date'] or '最初'}～{inputs['end_date'] or '最新'}）" if inputs['start_date'] or inputs['end_date'] else "（全期間対象）"
+        review_text = (
+            f"【根拠レビュー】\n・ロットサイズ: {self._format_int(inputs['lot_size'])}\n・対象期間: {period_text}\n"
+            f"・数量合計: {self._format_int(db_data['total_qty'])}個\n・不具合数合計: {self._format_int(db_data['total_defect'])}個\n"
+            f"・不良率: {db_data['defect_rate']:.2f}%\n・信頼度: {inputs['conf']*100:.1f}%\n・c値: {inputs['c']}\n"
+            f"・推奨抜取検査数: {sample_size_disp} 個\n（c={inputs['c']}, 信頼度={inputs['conf']*100:.1f}%の条件で自動計算）"
+        )
+        if db_data['best5']:
+            best5_text = "【検査時の注意喚起：過去不具合ベスト5】\n"
+            for i, (naiyo, count) in enumerate(db_data['best5'], 1):
+                rate = next((r for col, r, c_ in db_data['defect_rates_sorted'] if col == naiyo), 0)
+                best5_text += f"{i}. {naiyo}（{self._format_int(count)}個, {rate:.2f}%）\n"
+        else: best5_text = "【検査時の注意喚起】\n該当期間に不具合データがありません。"
+        if db_data['best5'] and db_data['best5'][0][1] > 0:
+            advice = f"過去最多の不具合は『{db_data['best5'][0][0]}』です。検査時は特にこの点にご注意ください。"
+        elif db_data['total_defect'] > 0: advice = "過去の不具合傾向から特に目立つ項目はありませんが、標準的な検査を心がけましょう。"
+        else: advice = "過去の不具合データが少ないため、全般的に注意して検査を行ってください。"
+        return {'review': review_text, 'best5': best5_text, 'advice': advice}
+
+    def _display_main_results(self, stats_results, advice_text):
+        sample_size_disp = self._format_int(stats_results['sample_size'])
         self.app.main_sample_label = tk.Label(self.app.result_frame, text=f"抜取検査数: {sample_size_disp} 個", font=("Meiryo", 32, "bold"), fg="#007bff", bg="#e9ecef", pady=10)
         self.app.main_sample_label.pack(pady=(10, 0))
         self.app.level_label = tk.Label(self.app.result_frame, text=f"検査水準: {stats_results['level_text']}", font=("Meiryo", 16, "bold"), fg="#2c3e50", bg="#e9ecef", pady=5)
         self.app.level_label.pack()
         self.app.reason_label = tk.Label(self.app.result_frame, text=f"根拠: {stats_results['level_reason']}", font=("Meiryo", 12), fg="#6c757d", bg="#e9ecef", pady=5, wraplength=800)
         self.app.reason_label.pack()
-
-        period_text = f"（{inputs['start_date'] or '最初'}～{inputs['end_date'] or '最新'}）" if inputs['start_date'] or inputs['end_date'] else "（全期間対象）"
-        review_text = (
-            f"【根拠レビュー】\n"
-            f"・ロットサイズ: {format_int(inputs['lot_size'])}\n"
-            f"・対象期間: {period_text}\n"
-            f"・数量合計: {format_int(db_data['total_qty'])}個\n"
-            f"・不具合数合計: {format_int(db_data['total_defect'])}個\n"
-            f"・不良率: {db_data['defect_rate']:.2f}%\n"
-            f"・信頼度: {inputs['conf']*100:.1f}%\n"
-            f"・c値: {inputs['c']}\n"
-            f"・推奨抜取検査数: {sample_size_disp} 個\n"
-            f"（c={inputs['c']}, 信頼度={inputs['conf']*100:.1f}%の条件で自動計算）"
-        )
-        self.app.review_var.set(review_text)
-        self.app.review_frame.pack(fill='x', padx=40, pady=10) # Make visible
-
-        if db_data['best5']:
-            best5_text = "【検査時の注意喚起：過去不具合ベスト5】\n"
-            for i, (naiyo, count) in enumerate(db_data['best5'], 1):
-                rate = next((r for col, r, c_ in db_data['defect_rates_sorted'] if col == naiyo), 0)
-                best5_text += f"{i}. {naiyo}（{format_int(count)}個, {rate:.2f}%）\n"
-        else:
-            best5_text = "【検査時の注意喚起】\n該当期間に不具合データがありません。"
-        self.app.best3_var.set(best5_text)
-        self.app.best3_frame.pack(fill='x', padx=40, pady=10) # Make visible
-
-        advice = ""
-        if db_data['best5'] and db_data['best5'][0][1] > 0:
-            advice = f"過去最多の不具合は『{db_data['best5'][0][0]}』です。検査時は特にこの点にご注意ください。"
-        elif db_data['total_defect'] > 0:
-            advice = "過去の不具合傾向から特に目立つ項目はありませんが、標準的な検査を心がけましょう。"
-        else:
-            advice = "過去の不具合データが少ないため、全般的に注意して検査を行ってください。"
-        self.app.advice_label = tk.Label(self.app.sampling_frame, text=advice, font=("Meiryo", 9), fg=self.app.WARNING_RED, bg=self.app.LIGHT_GRAY, wraplength=800, justify='left', padx=15, pady=8, relief="flat", bd=1)
+        self.app.advice_label = tk.Label(self.app.sampling_frame, text=advice_text, font=("Meiryo", 9), fg=self.app.WARNING_RED, bg=self.app.LIGHT_GRAY, wraplength=800, justify='left', padx=15, pady=8, relief="flat", bd=1)
         self.app.advice_label.pack(after=self.app.result_label, pady=(0, 5))
+
+    def _display_detailed_results(self, texts):
+        self.app.review_var.set(texts['review'])
+        self.app.review_frame.pack(fill='x', padx=40, pady=10)
+        self.app.best3_var.set(texts['best5'])
+        self.app.best3_frame.pack(fill='x', padx=40, pady=10)
+        if hasattr(self.app, 'show_export_button'): self.app.show_export_button()
+
+    def export_results(self):
+        if not self.last_db_data: messagebox.showinfo("エクスポート不可", "先に計算を実行してください。"); return
+        texts = self._generate_result_texts(self.last_db_data, self.last_stats_results, self.last_inputs)
+        sample_size_disp = self._format_int(self.last_stats_results['sample_size'])
+        content = (
+            f"--- 抜取検査数計算結果 ---\n\n"
+            f"品番: {self.last_inputs['product_number']}\nロットサイズ: {self._format_int(self.last_inputs['lot_size'])}\n\n"
+            f"【推奨抜取検査数】\n{sample_size_disp} 個\n\n"
+            f"【検査水準】\n{self.last_stats_results['level_text']}\n根拠: {self.last_stats_results['level_reason']}\n\n"
+            f"{texts['review']}\n\n{texts['best5']}\n\n"
+            f"【AIからのアドバイス】\n{texts['advice']}\n"
+        )
+        try:
+            filepath = filedialog.asksaveasfilename(
+                title="結果を名前を付けて保存",defaultextension=".txt",
+                filetypes=[("テキストファイル", "*.txt"), ("すべてのファイル", "*.*รา")],
+                initialfile=f"検査結果_{self.last_inputs['product_number']}.txt"
+            )
+            if not filepath: return
+            with open(filepath, 'w', encoding='utf-8') as f: f.write(content)
+            messagebox.showinfo("成功", f"結果を保存しました。\nパス: {filepath}")
+        except Exception as e:
+            messagebox.showerror("エクスポート失敗", f"ファイルの保存中にエラーが発生しました: {e}")
+
+    def _fetch_all_product_numbers(self):
+        conn = self._get_db_connection()
+        if not conn: return []
+        try:
+            with conn.cursor() as cursor:
+                sql = "SELECT DISTINCT [品番] FROM t_不具合情報 ORDER BY [品番]"
+                rows = cursor.execute(sql).fetchall()
+                return [row[0] for row in rows if row[0]]
+        except pyodbc.Error as e:
+            messagebox.showerror("データベースエラー", f"品番リストの取得中にエラーが発生しました: {e}")
+            return []
+        finally:
+            if conn: conn.close()
+
+    def show_product_numbers_list(self):
+        product_numbers = self._fetch_all_product_numbers()
+        if not product_numbers: messagebox.showinfo("情報", "表示できる品番がありません。"); return
+        win = tk.Toplevel(self.app)
+        win.title("品番リスト")
+        win.geometry("300x400")
+        search_frame = tk.Frame(win); search_frame.pack(fill='x', padx=5, pady=5)
+        tk.Label(search_frame, text="検索:").pack(side='left')
+        search_var = tk.StringVar()
+        search_entry = tk.Entry(search_frame, textvariable=search_var); search_entry.pack(fill='x', expand=True)
+        list_frame = tk.Frame(win); list_frame.pack(fill='both', expand=True, padx=5, pady=5)
+        scrollbar = tk.Scrollbar(list_frame, orient='vertical')
+        listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set)
+        scrollbar.config(command=listbox.yview)
+        scrollbar.pack(side='right', fill='y'); listbox.pack(side='left', fill='both', expand=True)
+        for pn in product_numbers: listbox.insert('end', pn)
+        def update_listbox(*args):
+            search_term = search_var.get().lower()
+            listbox.delete(0, 'end')
+            for pn in product_numbers:
+                if search_term in pn.lower(): listbox.insert('end', pn)
+        search_var.trace("w", update_listbox)
+        def on_double_click(event):
+            selected_indices = listbox.curselection()
+            if not selected_indices: return
+            selected_pn = listbox.get(selected_indices[0])
+            self.app.sample_pn_entry.delete(0, 'end'); self.app.sample_pn_entry.insert(0, selected_pn)
+            win.destroy()
+        listbox.bind("<Double-1>", on_double_click)
+        win.transient(self.app)
+        win.grab_set()
+        self.app.wait_window(win)
 
 if __name__ == "__main__":
     controller = MainController()
