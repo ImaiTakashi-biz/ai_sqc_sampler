@@ -17,7 +17,10 @@ class App(tk.Tk):
         self.title("抜取検査数計算ツール - AIアシスト")
         self.geometry("1000x700")
         self.configure(bg="#ffffff")
-        self._center_window()
+        try:
+            self.state('zoomed')
+        except tk.TclError:
+            self._center_window()
         self.bind('<Configure>', self._on_resize)
 
         # --- ウィジェットの構築 ---
@@ -37,18 +40,58 @@ class App(tk.Tk):
 
     def _create_widgets(self):
         # スクロール可能なCanvasで全体をラップ
-        main_canvas = tk.Canvas(self, bg="#ffffff", highlightthickness=0)
-        main_canvas.pack(side='left', fill='both', expand=True)
-        yscroll = tk.Scrollbar(self, orient='vertical', command=main_canvas.yview)
-        yscroll.pack(side='right', fill='y')
-        main_canvas.configure(yscrollcommand=yscroll.set)
+        # Create a frame to hold the canvas and scrollbars
+        canvas_frame = tk.Frame(self)
+        canvas_frame.pack(fill="both", expand=True)
+
+        # Vertical Scrollbar
+        yscroll = tk.Scrollbar(canvas_frame, orient='vertical')
+        yscroll.grid(row=0, column=1, sticky='ns')
+
+        # Horizontal Scrollbar
+        xscroll = tk.Scrollbar(canvas_frame, orient='horizontal')
+        xscroll.grid(row=1, column=0, sticky='ew')
+
+        # Main Canvas
+        main_canvas = tk.Canvas(canvas_frame, bg="#ffffff", highlightthickness=0)
+        main_canvas.grid(row=0, column=0, sticky='nsew')
+
+        # Configure scrollbars
+        main_canvas.configure(yscrollcommand=yscroll.set, xscrollcommand=xscroll.set)
+        yscroll.configure(command=main_canvas.yview)
+        xscroll.configure(command=main_canvas.xview)
+
+        # Make the canvas frame expand
+        canvas_frame.grid_rowconfigure(0, weight=1)
+        canvas_frame.grid_columnconfigure(0, weight=1)
 
         main_frame = tk.Frame(main_canvas, bg="#ffffff")
-        main_canvas.create_window((0, 0), window=main_frame, anchor='nw')
+        main_frame_window = main_canvas.create_window((0, 0), window=main_frame, anchor='nw')
 
-        def on_configure(event):
+        def on_frame_configure(event):
+            # Update scrollregion based on main_frame's size
             main_canvas.config(scrollregion=main_canvas.bbox('all'))
-        main_frame.bind('<Configure>', on_configure)
+
+            canvas_width = main_canvas.winfo_width()
+            canvas_height = main_canvas.winfo_height()
+            frame_width = main_frame.winfo_reqwidth()
+            frame_height = main_frame.winfo_reqheight()
+
+            # Horizontal Centering
+            x_pos = 0
+            if frame_width < canvas_width:
+                x_pos = (canvas_width - frame_width) / 2
+            
+            # Vertical Centering
+            y_pos = 0
+            if frame_height < canvas_height:
+                y_pos = (canvas_height - frame_height) / 2
+
+            main_canvas.coords(main_frame_window, x_pos, y_pos)
+
+        # Bind on_frame_configure to main_frame and main_canvas
+        main_frame.bind('<Configure>', on_frame_configure)
+        main_canvas.bind('<Configure>', on_frame_configure)
 
         # マウスホイールで縦スクロール
         if platform.system() == 'Windows':
@@ -57,14 +100,20 @@ class App(tk.Tk):
             main_canvas.bind_all('<Button-4>', lambda e: main_canvas.yview_scroll(-1, 'units'))
             main_canvas.bind_all('<Button-5>', lambda e: main_canvas.yview_scroll(1, 'units'))
 
+        
+
+        # --- Content Wrapper for Centering ---
+        content_wrapper = tk.Frame(main_frame, bg="#ffffff")
+        content_wrapper.pack(expand=True)
+
         # ヘッダー部分
-        header_frame = tk.Frame(main_frame, bg="#f8f9fa", height=80)
+        header_frame = tk.Frame(content_wrapper, bg="#f8f9fa", height=80)
         header_frame.pack(fill='x', pady=(20, 10))
         header_frame.pack_propagate(False)
         tk.Label(header_frame, text="🤖 AI抜取検査数計算ツール", font=("Meiryo", 16, "bold"), fg="#2c3e50", bg="#f8f9fa").pack(expand=True)
 
         # 計算方法の要約
-        summary_frame = tk.Frame(main_frame, bg="#e9ecef", relief="flat", bd=1)
+        summary_frame = tk.Frame(content_wrapper, bg="#e9ecef", relief="flat", bd=1)
         summary_frame.pack(fill='x', pady=(0, 20))
         summary_text = (
             "【このツールの計算方法】\n"
@@ -77,7 +126,7 @@ class App(tk.Tk):
         tk.Label(summary_frame, text=summary_text, fg="#495057", bg="#e9ecef", font=("Meiryo", 10), wraplength=950, anchor='w', justify='left', padx=15, pady=10).pack(fill='x')
 
         # メイン計算フレーム
-        self.sampling_frame = tk.Frame(main_frame, bg="#ffffff", relief="flat", bd=2)
+        self.sampling_frame = tk.Frame(content_wrapper, bg="#ffffff", relief="flat", bd=2)
         self.sampling_frame.pack(fill='both', expand=True, padx=50)
         tk.Label(self.sampling_frame, text="📊 抜取検査数計算", font=("Meiryo", 14, "bold"), fg="#2c3e50", bg="#ffffff").pack(pady=(20, 15))
 
