@@ -91,7 +91,7 @@ class MainController:
         self.progress_window = tk.Toplevel(self.app)
         self.progress_window.title("AI計算中")
         self.progress_window.geometry("400x200")
-        self.progress_window.configure(bg=self.app.LIGHT_GRAY)
+        self.progress_window.configure(bg="#ffffff")
         self.progress_window.resizable(False, False)
         x = (self.app.winfo_screenwidth() // 2) - (200)
         y = (self.app.winfo_screenheight() // 2) - (100)
@@ -101,8 +101,8 @@ class MainController:
         progress_bar.pack(pady=20)
         progress_bar.start()
 
-        tk.Label(self.progress_window, text="🤖 AIが統計計算を開始しました...", font=("Meiryo", 12, "bold"), fg=self.app.DARK_GRAY, bg=self.app.LIGHT_GRAY).pack(pady=10)
-        self.detail_label = tk.Label(self.progress_window, text="データベースから過去の不具合データを分析中", font=("Meiryo", 10), fg=self.app.MEDIUM_GRAY, bg=self.app.LIGHT_GRAY)
+        tk.Label(self.progress_window, text="🤖 AIが統計計算を開始しました...", font=("Meiryo", 12, "bold"), fg="#2c3e50", bg="#ffffff").pack(pady=10)
+        self.detail_label = tk.Label(self.progress_window, text="データベースから過去の不具合データを分析中", font=("Meiryo", 10), fg="#6c757d", bg="#ffffff")
         self.detail_label.pack(pady=5)
         
         self.app.result_var.set("")
@@ -250,7 +250,6 @@ class MainController:
             f"（c={inputs['c']}, 信頼度={inputs['conf']*100:.1f}%の条件で自動計算）"
         )
         self.app.review_var.set(review_text)
-        self.app.review_frame.pack(fill='x', padx=40, pady=10) # Make visible
 
         if db_data['best5']:
             best5_text = "【検査時の注意喚起：過去不具合ベスト5】\n"
@@ -260,7 +259,6 @@ class MainController:
         else:
             best5_text = "【検査時の注意喚起】\n該当期間に不具合データがありません。"
         self.app.best3_var.set(best5_text)
-        self.app.best3_frame.pack(fill='x', padx=40, pady=10) # Make visible
 
         advice = ""
         if db_data['best5'] and db_data['best5'][0][1] > 0:
@@ -269,7 +267,7 @@ class MainController:
             advice = "過去の不具合傾向から特に目立つ項目はありませんが、標準的な検査を心がけましょう。"
         else:
             advice = "過去の不具合データが少ないため、全般的に注意して検査を行ってください。"
-        self.app.advice_label = tk.Label(self.app.sampling_frame, text=advice, font=("Meiryo", 9), fg=self.app.WARNING_RED, bg=self.app.LIGHT_GRAY, wraplength=800, justify='left', padx=15, pady=8, relief="flat", bd=1)
+        self.app.advice_label = tk.Label(self.app.sampling_frame, text=advice, font=("Meiryo", 9), fg="#dc3545", bg="#ffffff")
         self.app.advice_label.pack(after=self.app.result_label, pady=(0, 5))
 
 if __name__ == "__main__":

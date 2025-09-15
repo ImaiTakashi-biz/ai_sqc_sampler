@@ -13,19 +13,10 @@ class App(tk.Tk):
         self.review_var = tk.StringVar()
         self.best3_var = tk.StringVar()
         
-        # --- カラーパレット ---
-        self.PRIMARY_BLUE = "#3498db"
-        self.ACCENT_BLUE = "#2980b9"
-        self.LIGHT_GRAY = "#ecf0f1"
-        self.MEDIUM_GRAY = "#bdc3c7"
-        self.DARK_GRAY = "#34495e"
-        self.WARNING_RED = "#e74c3c"
-        self.INFO_GREEN = "#2ecc71"
-
         # --- ウィンドウ設定 ---
         self.title("抜取検査数計算ツール - AIアシスト")
         self.geometry("1000x700")
-        self.configure(bg=self.LIGHT_GRAY)
+        self.configure(bg="#ffffff")
         try:
             self.state('zoomed')
         except tk.TclError:
@@ -116,10 +107,10 @@ class App(tk.Tk):
         content_wrapper.pack(expand=True)
 
         # ヘッダー部分
-        header_frame = tk.Frame(main_frame, bg=self.PRIMARY_BLUE, height=80)
+        header_frame = tk.Frame(content_wrapper, bg="#f8f9fa", height=80)
         header_frame.pack(fill='x', pady=(20, 10))
         header_frame.pack_propagate(False)
-        tk.Label(header_frame, text="🤖 AI抜取検査数計算ツール", font=("Meiryo", 16, "bold"), fg="#ffffff", bg=self.PRIMARY_BLUE).pack(expand=True)
+        tk.Label(header_frame, text="🤖 AI抜取検査数計算ツール", font=("Meiryo", 16, "bold"), fg="#2c3e50", bg="#f8f9fa").pack(expand=True)
 
         # 計算方法の要約
         summary_frame = tk.Frame(content_wrapper, bg="#e9ecef", relief="flat", bd=1)
@@ -147,21 +138,21 @@ class App(tk.Tk):
         row1_frame = tk.Frame(input_frame, bg="#ffffff")
         row1_frame.pack(fill='x', pady=5)
         tk.Label(row1_frame, text="品番:", font=("Meiryo", 11), fg="#2c3e50", bg="#ffffff").pack(side='left', padx=(0, 5))
-        self.sample_pn_entry = tk.Entry(row1_frame, width=20, font=("Meiryo", 11), bg=self.LIGHT_GRAY, fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
+        self.sample_pn_entry = tk.Entry(row1_frame, width=20, font=("Meiryo", 11), bg="#ffffff", fg="#333333", relief="solid", bd=1)
         self.sample_pn_entry.pack(side='left', padx=5)
         tk.Label(row1_frame, text="数量 (ロットサイズ):", font=("Meiryo", 11), fg="#2c3e50", bg="#ffffff").pack(side='left', padx=(20, 5))
-        self.sample_qty_entry = tk.Entry(row1_frame, width=12, font=("Meiryo", 11), bg=self.LIGHT_GRAY, fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
+        self.sample_qty_entry = tk.Entry(row1_frame, width=12, font=("Meiryo", 11), bg="#ffffff", fg="#333333", relief="solid", bd=1)
         self.sample_qty_entry.pack(side='left', padx=5)
 
         # 2行目：信頼度とc値
         row2_frame = tk.Frame(input_frame, bg="#ffffff")
         row2_frame.pack(fill='x', pady=5)
         tk.Label(row2_frame, text="信頼度(%):", font=("Meiryo", 11), fg="#2c3e50", bg="#ffffff").pack(side='left', padx=(0, 5))
-        self.sample_conf_entry = tk.Entry(row2_frame, width=6, font=("Meiryo", 11), bg=self.LIGHT_GRAY, fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
+        self.sample_conf_entry = tk.Entry(row2_frame, width=6, font=("Meiryo", 11), bg="#ffffff", fg="#333333", relief="solid", bd=1)
         self.sample_conf_entry.pack(side='left', padx=5)
         self.sample_conf_entry.insert(0, "99")
         tk.Label(row2_frame, text="c値(許容不良数):", font=("Meiryo", 11), fg="#2c3e50", bg="#ffffff").pack(side='left', padx=(20, 5))
-        self.sample_c_entry = tk.Entry(row2_frame, width=6, font=("Meiryo", 11), bg=self.LIGHT_GRAY, fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
+        self.sample_c_entry = tk.Entry(row2_frame, width=6, font=("Meiryo", 11), bg="#ffffff", fg="#333333", relief="solid", bd=1)
         self.sample_c_entry.pack(side='left', padx=5)
         self.sample_c_entry.insert(0, "0")
 
@@ -178,12 +169,12 @@ class App(tk.Tk):
         row3_frame = tk.Frame(input_frame, bg="#ffffff")
         row3_frame.pack(fill='x', pady=5)
         tk.Label(row3_frame, text="対象日（開始）:", font=("Meiryo", 11), fg="#2c3e50", bg="#ffffff").pack(side='left', padx=(0, 5))
-        self.sample_start_date_entry = DateEntry(row3_frame, width=12, date_pattern='yyyy-mm-dd', font=("Meiryo", 11), bg=self.LIGHT_GRAY, fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
+        self.sample_start_date_entry = DateEntry(row3_frame, width=12, date_pattern='yyyy-mm-dd', font=("Meiryo", 11), bg="#ffffff", fg="#333333")
         self.sample_start_date_entry.pack(side='left', padx=5)
         self.sample_start_date_entry.delete(0, 'end')
         tk.Button(row3_frame, text="クリア", font=("Meiryo", 9), command=lambda: self.sample_start_date_entry.delete(0, 'end'), bg="#f8f9fa", relief="flat").pack(side='left', padx=(2, 10))
         tk.Label(row3_frame, text="～", font=("Meiryo", 11), fg="#2c3e50", bg="#ffffff").pack(side='left')
-        self.sample_end_date_entry = DateEntry(row3_frame, width=12, date_pattern='yyyy-mm-dd', font=("Meiryo", 11), bg=self.LIGHT_GRAY, fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
+        self.sample_end_date_entry = DateEntry(row3_frame, width=12, date_pattern='yyyy-mm-dd', font=("Meiryo", 11), bg="#ffffff", fg="#333333")
         self.sample_end_date_entry.pack(side='left', padx=5)
         self.sample_end_date_entry.delete(0, 'end')
         tk.Button(row3_frame, text="クリア", font=("Meiryo", 9), command=lambda: self.sample_end_date_entry.delete(0, 'end'), bg="#f8f9fa", relief="flat").pack(side='left', padx=(2, 10))
@@ -192,24 +183,22 @@ class App(tk.Tk):
         # 計算ボタン
         button_frame = tk.Frame(input_frame, bg="#ffffff")
         button_frame.pack(fill='x', pady=15)
-        self.calc_button = tk.Button(button_frame, text="🚀 計算実行", command=self.controller.start_calculation_thread, font=("Meiryo", 12, "bold"), bg=self.PRIMARY_BLUE, fg="#ffffff", relief="flat", padx=30, pady=10, cursor="hand2", activebackground=self.ACCENT_BLUE, activeforeground="#ffffff")
+        self.calc_button = tk.Button(button_frame, text="🚀 計算実行", command=self.controller.start_calculation_thread, font=("Meiryo", 12, "bold"), bg="#007bff", fg="#ffffff", relief="flat", padx=30, pady=10, cursor="hand2")
         self.calc_button.pack()
 
         # --- 結果表示フレーム ---
-        self.result_frame = tk.Frame(self.sampling_frame, bg=self.LIGHT_GRAY, relief="flat", bd=1)
+        self.result_frame = tk.Frame(self.sampling_frame, bg="#e9ecef", relief="flat", bd=1)
         self.result_frame.pack(fill='x', padx=40, pady=15)
-        self.result_label = tk.Label(self.result_frame, textvariable=self.result_var, font=("Meiryo", 12, "bold"), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY, padx=20, pady=15, wraplength=800, justify='center')
+        self.result_label = tk.Label(self.result_frame, textvariable=self.result_var, font=("Meiryo", 12, "bold"), fg="#2c3e50", bg="#e9ecef", padx=20, pady=15, wraplength=800, justify='center')
         self.result_label.pack(fill='x')
         self.result_var.set("品番・数量・（任意で対象日）を入力して計算実行ボタンを押してください。")
 
         # 根拠レビュー表示
-        self.review_frame = tk.Frame(self.sampling_frame, bg=self.LIGHT_GRAY, relief="flat", bd=1)
-        self.review_frame.pack(fill='x', padx=40, pady=10)
-        self.review_frame.pack_forget() # Hide initially
-        tk.Label(self.review_frame, textvariable=self.review_var, font=("Meiryo", 10), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY, padx=15, pady=8, wraplength=800, justify='left').pack(fill='x')
+        review_frame = tk.Frame(self.sampling_frame, bg="#ffffff")
+        review_frame.pack(fill='x', padx=40, pady=10)
+        tk.Label(review_frame, textvariable=self.review_var, font=("Meiryo", 10), fg="#6c757d", bg="#ffffff", padx=15, pady=8, wraplength=800, justify='left').pack(fill='x')
 
         # 注意喚起表示
-        self.best3_frame = tk.Frame(self.sampling_frame, bg=self.WARNING_RED, relief="flat", bd=1)
-        self.best3_frame.pack(fill='x', padx=40, pady=10)
-        self.best3_frame.pack_forget() # Hide initially
-        tk.Label(self.best3_frame, textvariable=self.best3_var, font=("Meiryo", 10, "bold"), fg="#ffffff", bg=self.WARNING_RED, padx=15, pady=8, wraplength=800, justify='left').pack(fill='x')
+        best3_frame = tk.Frame(self.sampling_frame, bg="#ffffff")
+        best3_frame.pack(fill='x', padx=40, pady=10)
+        tk.Label(best3_frame, textvariable=self.best3_var, font=("Meiryo", 10, "bold"), fg="#dc3545", bg="#ffffff", padx=15, pady=8, wraplength=800, justify='left').pack(fill='x')
