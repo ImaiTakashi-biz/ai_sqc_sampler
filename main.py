@@ -8,8 +8,8 @@ from scipy.stats import binom
 import math
 import threading
 from gui import App
-from matplotlib.figure import Figure
-import numpy as np
+
+
 
 CONFIG_FILE = 'config.ini'
 DB_FILE_PATH_KEY = 'path'

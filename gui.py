@@ -182,21 +182,6 @@ class App(tk.Tk):
         self.best3_frame.pack_forget()
         tk.Label(self.best3_frame, textvariable=self.best3_var, font=(self.FONT_FAMILY, self.FONT_SIZE_SMALL, "bold"), fg="#ffffff", bg=self.WARNING_RED, padx=self.PADDING_X_SMALL, pady=self.PADDING_Y_SMALL, wraplength=self.WRAPLENGTH_DEFAULT, justify='left').pack(fill='x')
 
-    def display_chart(self, fig):
-        self.clear_chart()
-        if fig is None: return
-        self.chart_canvas_widget = FigureCanvasTkAgg(fig, master=self.chart_frame)
-        self.chart_canvas_widget.draw()
-        self.chart_canvas_widget.get_tk_widget().pack(fill='both', expand=True)
-        self.chart_frame.pack(fill='x', padx=self.PADDING_X_LARGE, pady=self.PADDING_Y_MEDIUM)
-
-    def clear_chart(self):
-        if self.chart_canvas_widget:
-            self.chart_canvas_widget.get_tk_widget().destroy()
-            self.chart_canvas_widget = None
-        if self.chart_frame:
-            self.chart_frame.pack_forget()
-
     def show_export_button(self):
         self.export_frame.pack(pady=self.PADDING_Y_MEDIUM)
 
