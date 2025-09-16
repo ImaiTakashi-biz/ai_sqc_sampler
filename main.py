@@ -14,7 +14,6 @@ import numpy as np
 CONFIG_FILE = 'config.ini'
 DB_FILE_PATH_KEY = 'path'
 DB_SECTION = 'DATABASE'
-DEFAULT_DB_PATH = r'C:\Users\SEIZOU-20\Desktop\AI関連\access_test\不具合情報記録.accdb'
 DEFECT_COLUMNS = [
     "外観キズ", "圧痕", "切粉", "毟れ", "穴大", "穴小", "穴キズ", "バリ", "短寸", "面粗", "サビ", "ボケ", "挽目", "汚れ", "メッキ", "落下",
     "フクレ", "ツブレ", "ボッチ", "段差", "バレル石", "径プラス", "径マイナス", "ゲージ", "異物混入", "形状不良", "こすれ", "変色シミ", "材料キズ", "ゴミ", "その他"
