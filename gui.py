@@ -140,6 +140,8 @@ class App(tk.Tk):
         self.sample_c_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
         self.sample_c_entry.insert(0, "0")
 
+        tk.Label(input_frame, text="※ 信頼度: 抜取検査で不良品を見逃さない確率（例: 99%なら1%の確率で見逃す）\n※ c値: 抜取検査で許容できる不良品の最大数（例: c=0なら不良品が1つでも見つかれば不合格）", fg=self.DARK_GRAY, bg=self.LIGHT_GRAY, font=(self.FONT_FAMILY, self.FONT_SIZE_SMALL), wraplength=self.WRAPLENGTH_DEFAULT, justify='left').pack(pady=self.PADDING_Y_SMALL)
+
         row3_frame = tk.Frame(input_frame, bg=self.LIGHT_GRAY)
         row3_frame.pack(fill='x', pady=self.PADDING_Y_SMALL)
         tk.Label(row3_frame, text="対象日（開始）:", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left', padx=(0, self.PADDING_Y_SMALL))

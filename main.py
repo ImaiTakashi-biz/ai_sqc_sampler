@@ -31,17 +31,20 @@ class MainController:
     def run(self):
         self.app.mainloop()
 
-    def _create_default_config(self):
-        config = configparser.ConfigParser()
-        config[DB_SECTION] = {DB_FILE_PATH_KEY: DEFAULT_DB_PATH}
-        with open(CONFIG_FILE, 'w', encoding='utf-8') as configfile:
-            config.write(configfile)
-
     def _get_db_path(self):
-        if not os.path.exists(CONFIG_FILE):
-            self._create_default_config()
         config = configparser.ConfigParser()
         config.read(CONFIG_FILE, encoding='utf-8')
+
+        if not os.path.exists(CONFIG_FILE):
+            messagebox.showerror("設定エラー", f"設定ファイル '{CONFIG_FILE}' が見つかりません。アプリケーションを終了します。")
+            self.app.quit()
+            return None
+
+        if DB_SECTION not in config or DB_FILE_PATH_KEY not in config[DB_SECTION]:
+            messagebox.showerror("設定エラー", f"設定ファイル '{CONFIG_FILE}' にデータベースパスが設定されていません。アプリケーションを終了します。")
+            self.app.quit()
+            return None
+
         return config[DB_SECTION][DB_FILE_PATH_KEY]
 
     def _get_db_connection(self):
