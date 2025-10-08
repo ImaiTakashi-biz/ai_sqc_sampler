@@ -235,16 +235,25 @@ class MainController:
         
         # 抜取検査数の計算
         n_sample = "計算不可"
+        warning_message = None
+        
         if p > 0 and 0 < inputs['confidence_level']/100 < 1:
             try:
                 if inputs['c_value'] == 0:
-                    n_sample = math.ceil(math.log(1 - inputs['confidence_level']/100) / math.log(1 - p))
+                    # c=0の場合の計算
+                    theoretical_n = math.ceil(math.log(1 - inputs['confidence_level']/100) / math.log(1 - p))
+                    
+                    # ロットサイズとの比較
+                    if theoretical_n > inputs['lot_size']:
+                        n_sample = f"全数検査必要（理論値: {theoretical_n:,}個）"
+                        warning_message = f"設定条件では理論上{theoretical_n:,}個の抜取が必要ですが、ロットサイズ（{inputs['lot_size']:,}個）を超えています。全数検査を推奨します。"
+                    else:
+                        n_sample = theoretical_n
                 else:
-                    low, high = 1, max(
-                        inputs['lot_size'] * InspectionConstants.MAX_SAMPLE_SIZE_MULTIPLIER, 
-                        InspectionConstants.MAX_CALCULATION_LIMIT
-                    )
-                    n_sample = f">{high} (計算断念)"
+                    # c>0の場合の二分探索
+                    low, high = 1, inputs['lot_size']  # ロットサイズを上限に設定
+                    n_sample = f"全数検査必要（計算断念）"
+                    
                     while low <= high:
                         mid = (low + high) // 2
                         if mid == 0: 
@@ -254,10 +263,19 @@ class MainController:
                             n_sample, high = mid, mid - 1
                         else:
                             low = mid + 1
+                    
+                    # c>0でロットサイズを超える場合の警告
+                    if n_sample == f"全数検査必要（計算断念）":
+                        warning_message = f"c={inputs['c_value']}、信頼度{inputs['confidence_level']:.1f}%の条件では、ロットサイズ（{inputs['lot_size']:,}個）を超える抜取が必要です。全数検査を推奨します。"
+                        
             except (ValueError, OverflowError): 
                 n_sample = "計算エラー"
         elif p == 0:
             n_sample = 1
+        
+        # 警告メッセージを結果に追加
+        if warning_message:
+            results['warning_message'] = warning_message
         
         results['sample_size'] = n_sample
         return results
@@ -272,6 +290,10 @@ class MainController:
         texts = self._generate_result_texts(db_data, stats_results, inputs)
         self._display_main_results(stats_results, texts['advice'])
         self._display_detailed_results(texts)
+        
+        # 警告メッセージの表示
+        if 'warning_message' in stats_results:
+            self._display_warning_message(stats_results['warning_message'])
 
     def _clear_previous_results(self):
         """以前の結果をクリア"""
@@ -280,6 +302,8 @@ class MainController:
                 widget.destroy()
         self.app.review_frame.pack_forget()
         self.app.best3_frame.pack_forget()
+        if hasattr(self.app, 'warning_frame'):
+            self.app.warning_frame.destroy()
         if hasattr(self.app, 'hide_export_button'):
             self.app.hide_export_button()
 
@@ -372,6 +396,247 @@ class MainController:
             bd=1
         )
         self.app.advice_label.pack(after=self.app.result_label, pady=(0, 5))
+
+    def _display_warning_message(self, warning_message):
+        """警告メッセージの表示"""
+        # 警告フレームの作成
+        warning_frame = tk.Frame(
+            self.app.sampling_frame, 
+            bg="#fff3cd", 
+            relief="solid", 
+            bd=2
+        )
+        warning_frame.pack(fill='x', padx=40, pady=(10, 5))
+        
+        # 警告アイコンとメッセージ
+        warning_label = tk.Label(
+            warning_frame, 
+            text=f"⚠️ 警告: {warning_message}", 
+            font=("Meiryo", 10, "bold"), 
+            fg="#856404", 
+            bg="#fff3cd", 
+            wraplength=800, 
+            justify='left', 
+            padx=15, 
+            pady=10
+        )
+        warning_label.pack()
+        
+        # 代替案の提案ボタン
+        alternatives_button = tk.Button(
+            warning_frame, 
+            text="💡 代替案を表示", 
+            command=lambda: self._show_alternatives(), 
+            font=("Meiryo", 9), 
+            bg="#ffc107", 
+            fg="#212529", 
+            relief="flat", 
+            padx=10, 
+            pady=5
+        )
+        alternatives_button.pack(pady=(0, 10))
+        
+        # 警告フレームを保存（後で削除するため）
+        self.app.warning_frame = warning_frame
+
+    def _show_alternatives(self):
+        """代替案の表示"""
+        if not hasattr(self, 'last_inputs') or not self.last_inputs:
+            messagebox.showinfo("情報", "先に計算を実行してください。")
+            return
+        
+        # 代替案ダイアログの作成
+        dialog = tk.Toplevel(self.app)
+        dialog.title("代替案の提案")
+        dialog.geometry("600x500")
+        dialog.configure(bg="#f8f9fa")
+        dialog.resizable(True, True)
+        
+        # 中央配置
+        x = (self.app.winfo_screenwidth() // 2) - 300
+        y = (self.app.winfo_screenheight() // 2) - 250
+        dialog.geometry(f"600x500+{x}+{y}")
+        
+        # モーダル表示
+        dialog.transient(self.app)
+        dialog.grab_set()
+        
+        # タイトル
+        title_label = tk.Label(
+            dialog, 
+            text="💡 代替案の提案", 
+            font=("Meiryo", 16, "bold"), 
+            fg="#2c3e50", 
+            bg="#f8f9fa"
+        )
+        title_label.pack(pady=(20, 10))
+        
+        # 現在の条件表示
+        current_frame = tk.LabelFrame(
+            dialog, 
+            text="現在の条件", 
+            font=("Meiryo", 12, "bold"), 
+            fg="#2c3e50", 
+            bg="#f8f9fa",
+            padx=10,
+            pady=10
+        )
+        current_frame.pack(fill='x', padx=20, pady=10)
+        
+        current_text = f"ロットサイズ: {self._format_int(self.last_inputs['lot_size'])}個\n"
+        current_text += f"不良率: {self.last_db_data['defect_rate']:.3f}%\n"
+        current_text += f"信頼度: {self.last_inputs['confidence_level']:.1f}%\n"
+        current_text += f"c値: {self.last_inputs['c_value']}"
+        
+        tk.Label(
+            current_frame, 
+            text=current_text, 
+            font=("Meiryo", 10), 
+            fg="#495057", 
+            bg="#f8f9fa",
+            justify='left'
+        ).pack(anchor='w')
+        
+        # 代替案の計算と表示
+        alternatives_frame = tk.LabelFrame(
+            dialog, 
+            text="代替案", 
+            font=("Meiryo", 12, "bold"), 
+            fg="#2c3e50", 
+            bg="#f8f9fa",
+            padx=10,
+            pady=10
+        )
+        alternatives_frame.pack(fill='both', expand=True, padx=20, pady=10)
+        
+        # スクロール可能なテキストエリア
+        text_frame = tk.Frame(alternatives_frame, bg="#f8f9fa")
+        text_frame.pack(fill='both', expand=True)
+        
+        scrollbar = tk.Scrollbar(text_frame)
+        text_widget = tk.Text(
+            text_frame, 
+            font=("Meiryo", 10), 
+            bg="#ffffff", 
+            fg="#2c3e50",
+            wrap=tk.WORD,
+            yscrollcommand=scrollbar.set
+        )
+        scrollbar.config(command=text_widget.yview)
+        
+        scrollbar.pack(side='right', fill='y')
+        text_widget.pack(side='left', fill='both', expand=True)
+        
+        # 代替案の計算
+        alternatives_text = self._calculate_alternatives()
+        text_widget.insert('1.0', alternatives_text)
+        text_widget.config(state='disabled')
+        
+        # 閉じるボタン
+        close_button = tk.Button(
+            dialog, 
+            text="閉じる", 
+            command=dialog.destroy, 
+            font=("Meiryo", 10, "bold"), 
+            bg="#6c757d", 
+            fg="#ffffff", 
+            relief="flat", 
+            padx=20, 
+            pady=5
+        )
+        close_button.pack(pady=20)
+
+    def _calculate_alternatives(self):
+        """代替案の計算"""
+        import math
+        from scipy.stats import binom
+        
+        p = self.last_db_data['defect_rate'] / 100
+        lot_size = self.last_inputs['lot_size']
+        
+        alternatives = "【代替案の提案】\n\n"
+        
+        # 案1: 信頼度を下げる
+        alternatives += "1. 信頼度を下げる場合:\n"
+        for conf in [95, 90, 85]:
+            if p > 0:
+                theoretical_n = math.ceil(math.log(1 - conf/100) / math.log(1 - p))
+                if theoretical_n <= lot_size:
+                    alternatives += f"   信頼度{conf}%: {theoretical_n:,}個\n"
+                else:
+                    alternatives += f"   信頼度{conf}%: 全数検査必要（理論値: {theoretical_n:,}個）\n"
+        alternatives += "\n"
+        
+        # 案2: c値を上げる
+        alternatives += "2. c値を上げる場合:\n"
+        for c_val in [1, 2, 3]:
+            try:
+                low, high = 1, lot_size
+                n_sample = "全数検査必要"
+                
+                while low <= high:
+                    mid = (low + high) // 2
+                    if mid == 0:
+                        low = 1
+                        continue
+                    if binom.cdf(c_val, mid, p) >= 1 - self.last_inputs['confidence_level']/100:
+                        n_sample, high = mid, mid - 1
+                    else:
+                        low = mid + 1
+                
+                if isinstance(n_sample, int):
+                    alternatives += f"   c={c_val}: {n_sample:,}個\n"
+                else:
+                    alternatives += f"   c={c_val}: {n_sample}\n"
+            except:
+                alternatives += f"   c={c_val}: 計算エラー\n"
+        alternatives += "\n"
+        
+        # 案3: 組み合わせ
+        alternatives += "3. 信頼度とc値を組み合わせる場合:\n"
+        for conf in [95, 90]:
+            for c_val in [1, 2]:
+                try:
+                    if p > 0:
+                        if c_val == 0:
+                            theoretical_n = math.ceil(math.log(1 - conf/100) / math.log(1 - p))
+                            if theoretical_n <= lot_size:
+                                alternatives += f"   信頼度{conf}%、c={c_val}: {theoretical_n:,}個\n"
+                            else:
+                                alternatives += f"   信頼度{conf}%、c={c_val}: 全数検査必要\n"
+                        else:
+                            low, high = 1, lot_size
+                            n_sample = "全数検査必要"
+                            
+                            while low <= high:
+                                mid = (low + high) // 2
+                                if mid == 0:
+                                    low = 1
+                                    continue
+                                if binom.cdf(c_val, mid, p) >= 1 - conf/100:
+                                    n_sample, high = mid, mid - 1
+                                else:
+                                    low = mid + 1
+                            
+                            if isinstance(n_sample, int):
+                                alternatives += f"   信頼度{conf}%、c={c_val}: {n_sample:,}個\n"
+                            else:
+                                alternatives += f"   信頼度{conf}%、c={c_val}: {n_sample}\n"
+                except:
+                    alternatives += f"   信頼度{conf}%、c={c_val}: 計算エラー\n"
+        alternatives += "\n"
+        
+        # 推奨案
+        alternatives += "【推奨案】\n"
+        alternatives += "現在の条件では統計的に適切な抜取検査が困難です。\n"
+        alternatives += "以下のいずれかを検討してください:\n\n"
+        alternatives += "• 全数検査の実施\n"
+        alternatives += "• 信頼度を95%に下げる\n"
+        alternatives += "• c値を1以上に設定する\n"
+        alternatives += "• 不良率の仮定を見直す\n\n"
+        alternatives += "※ 品質要求に応じて最適な条件を選択してください。"
+        
+        return alternatives
 
     def _display_detailed_results(self, texts):
         """詳細結果の表示"""
