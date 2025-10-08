@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 from tkcalendar import DateEntry
+from datetime import datetime
 import platform
 
 class App(tk.Tk):
@@ -49,6 +50,9 @@ class App(tk.Tk):
         except tk.TclError:
             self._center_window()
         self.bind('<Configure>', self._on_resize)
+        
+        # --- メニューバーの作成 ---
+        self._create_menu_bar()
 
         # --- ウィジェットの構築 ---
         self._create_widgets()
@@ -64,6 +68,30 @@ class App(tk.Tk):
     def _on_resize(self, event):
         if self.state() == 'zoomed':
             self._center_window()
+    
+    def _create_menu_bar(self):
+        """メニューバーの作成"""
+        menubar = tk.Menu(self)
+        self.config(menu=menubar)
+        
+        # ファイルメニュー
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="ファイル", menu=file_menu)
+        file_menu.add_command(label="設定...", command=self.controller.open_config_dialog)
+        file_menu.add_separator()
+        file_menu.add_command(label="終了", command=self.quit)
+        
+        # ツールメニュー
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="ツール", menu=tools_menu)
+        tools_menu.add_command(label="データベース接続テスト", command=self.controller.test_database_connection)
+        tools_menu.add_command(label="品番リスト表示", command=self.controller.show_product_numbers_list)
+        
+        # ヘルプメニュー
+        help_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="ヘルプ", menu=help_menu)
+        help_menu.add_command(label="ヘルプ", command=self.controller.show_help)
+        help_menu.add_command(label="アプリケーション情報", command=self.controller.show_about)
 
     def _create_widgets(self):
         canvas_frame = tk.Frame(self)
@@ -134,25 +162,31 @@ class App(tk.Tk):
         tk.Label(row2_frame, text="信頼度(%):", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left', padx=(0, self.PADDING_Y_SMALL))
         self.sample_conf_entry = tk.Entry(row2_frame, width=6, font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg="#ffffff", fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
         self.sample_conf_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
-        self.sample_conf_entry.insert(0, "99")
+        # デフォルト値を設定から取得
+        default_confidence = getattr(self.controller.config_manager, 'config', {}).get('default_confidence', 99.0)
+        default_c_value = getattr(self.controller.config_manager, 'config', {}).get('default_c_value', 0)
+        
+        self.sample_conf_entry.insert(0, str(default_confidence))
         tk.Label(row2_frame, text="c値(許容不良数):", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left', padx=(self.PADDING_Y_MEDIUM, self.PADDING_Y_SMALL))
         self.sample_c_entry = tk.Entry(row2_frame, width=6, font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg="#ffffff", fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
         self.sample_c_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
-        self.sample_c_entry.insert(0, "0")
+        self.sample_c_entry.insert(0, str(default_c_value))
 
         tk.Label(input_frame, text="※ 信頼度: 抜取検査で不良品を見逃さない確率（例: 99%なら1%の確率で見逃す）\n※ c値: 抜取検査で許容できる不良品の最大数（例: c=0なら不良品が1つでも見つかれば不合格）", fg=self.DARK_GRAY, bg=self.LIGHT_GRAY, font=(self.FONT_FAMILY, self.FONT_SIZE_SMALL), wraplength=self.WRAPLENGTH_DEFAULT, justify='left').pack(pady=self.PADDING_Y_SMALL)
 
         row3_frame = tk.Frame(input_frame, bg=self.LIGHT_GRAY)
         row3_frame.pack(fill='x', pady=self.PADDING_Y_SMALL)
         tk.Label(row3_frame, text="対象日（開始）:", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left', padx=(0, self.PADDING_Y_SMALL))
-        self.sample_start_date_entry = DateEntry(row3_frame, width=12, date_pattern='yyyy-mm-dd', font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg=self.LIGHT_GRAY, fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
+        self.sample_start_date_entry = DateEntry(row3_frame, width=12, date_pattern='yyyy-mm-dd', font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg=self.LIGHT_GRAY, fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE, showweeknumbers=False, locale='ja_JP')
         self.sample_start_date_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
         self.sample_start_date_entry.delete(0, 'end')
+        tk.Button(row3_frame, text="今日", font=(self.FONT_FAMILY, self.FONT_SIZE_XSMALL), command=lambda: self._set_today_date(self.sample_start_date_entry), bg=self.INFO_GREEN, fg="#ffffff", relief="flat").pack(side='left', padx=(2, 2))
         tk.Button(row3_frame, text="クリア", font=(self.FONT_FAMILY, self.FONT_SIZE_XSMALL), command=lambda: self.sample_start_date_entry.delete(0, 'end'), bg=self.MEDIUM_GRAY, fg=self.DARK_GRAY, relief="flat").pack(side='left', padx=(2, self.PADDING_Y_MEDIUM))
         tk.Label(row3_frame, text="～", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left')
-        self.sample_end_date_entry = DateEntry(row3_frame, width=12, date_pattern='yyyy-mm-dd', font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg=self.LIGHT_GRAY, fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
+        self.sample_end_date_entry = DateEntry(row3_frame, width=12, date_pattern='yyyy-mm-dd', font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg=self.LIGHT_GRAY, fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE, showweeknumbers=False, locale='ja_JP')
         self.sample_end_date_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
         self.sample_end_date_entry.delete(0, 'end')
+        tk.Button(row3_frame, text="今日", font=(self.FONT_FAMILY, self.FONT_SIZE_XSMALL), command=lambda: self._set_today_date(self.sample_end_date_entry), bg=self.INFO_GREEN, fg="#ffffff", relief="flat").pack(side='left', padx=(2, 2))
         tk.Button(row3_frame, text="クリア", font=(self.FONT_FAMILY, self.FONT_SIZE_XSMALL), command=lambda: self.sample_end_date_entry.delete(0, 'end'), bg=self.MEDIUM_GRAY, fg=self.DARK_GRAY, relief="flat").pack(side='left', padx=(2, self.PADDING_Y_MEDIUM))
         tk.Label(input_frame, text="※ 対象日を未入力の場合は全期間が対象となります。", fg=self.DARK_GRAY, bg=self.LIGHT_GRAY, font=(self.FONT_FAMILY, self.FONT_SIZE_SMALL)).pack(pady=self.PADDING_Y_SMALL)
 
@@ -187,3 +221,9 @@ class App(tk.Tk):
 
     def hide_export_button(self):
         self.export_frame.pack_forget()
+    
+    def _set_today_date(self, date_entry):
+        """今日の日付を設定"""
+        today = datetime.now().strftime('%Y-%m-%d')
+        date_entry.delete(0, 'end')
+        date_entry.insert(0, today)
