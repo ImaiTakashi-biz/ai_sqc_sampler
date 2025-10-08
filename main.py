@@ -7,17 +7,65 @@ import os
 from scipy.stats import binom
 import math
 import threading
+from datetime import datetime
 from gui import App
 
 
-
+# 設定ファイル関連の定数
 CONFIG_FILE = 'config.ini'
 DB_FILE_PATH_KEY = 'path'
 DB_SECTION = 'DATABASE'
+
+# 不具合項目の定義
 DEFECT_COLUMNS = [
     "外観キズ", "圧痕", "切粉", "毟れ", "穴大", "穴小", "穴キズ", "バリ", "短寸", "面粗", "サビ", "ボケ", "挽目", "汚れ", "メッキ", "落下",
     "フクレ", "ツブレ", "ボッチ", "段差", "バレル石", "径プラス", "径マイナス", "ゲージ", "異物混入", "形状不良", "こすれ", "変色シミ", "材料キズ", "ゴミ", "その他"
 ]
+
+
+class InspectionConstants:
+    """検査水準と計算関連の定数定義"""
+    
+    # 検査水準の閾値（不良率 %）
+    DEFECT_RATE_THRESHOLD_NORMAL = 0.5  # 普通水準の閾値
+    DEFECT_RATE_THRESHOLD_STRICT = 0.5  # きつい水準の閾値
+    
+    # 検査水準の定義
+    INSPECTION_LEVELS = {
+        'loose': {
+            'threshold': 0, 
+            'name': 'ゆるい(I)', 
+            'description': '過去の不具合が0件だったため、最もゆるい水準（I）を適用しています。'
+        },
+        'normal': {
+            'threshold': 0.5, 
+            'name': '普通(II)', 
+            'description': '過去の不具合率が0.5%以下だったため、普通水準（II）を適用しています。'
+        },
+        'strict': {
+            'threshold': float('inf'), 
+            'name': 'きつい(III)', 
+            'description': '過去の不具合率が0.5%を超えていたため、きつい水準（III）を適用しています。'
+        }
+    }
+    
+    # 計算関連の定数
+    MAX_SAMPLE_SIZE_MULTIPLIER = 2  # ロットサイズの最大倍率
+    MAX_CALCULATION_LIMIT = 10000   # 計算上限値
+    DEFAULT_CONFIDENCE = 99         # デフォルト信頼度
+    DEFAULT_C_VALUE = 0             # デフォルトc値
+    
+    # 入力値の制限
+    MAX_PRODUCT_NUMBER_LENGTH = 50
+    MIN_LOT_SIZE = 1
+    MAX_LOT_SIZE = 1000000
+    MIN_RECOMMENDED_LOT_SIZE = 10
+    MIN_CONFIDENCE = 80
+    MAX_CONFIDENCE = 99.9
+    MAX_C_VALUE_RATIO = 0.1  # ロットサイズに対するc値の最大比率
+    
+    # 使用できない文字
+    INVALID_CHARS = ['<', '>', ':', '"', '|', '?', '*']
 
 class MainController:
     def __init__(self):
@@ -27,6 +75,8 @@ class MainController:
         self.last_db_data = None
         self.last_stats_results = None
         self.last_inputs = None
+        self._product_numbers_cache = None
+        self._product_numbers_cache_lock = threading.Lock()
 
     def run(self):
         self.app.mainloop()
@@ -49,15 +99,52 @@ class MainController:
 
     def _get_db_connection(self):
         db_path = self._get_db_path()
-        if not os.path.exists(db_path):
-            messagebox.showerror("エラー", f"データベースファイルが見つかりません。\nパス: {db_path}\nconfig.iniを確認してください。")
+        if not db_path:
             return None
+            
+        if not os.path.exists(db_path):
+            messagebox.showerror("データベースファイルエラー", 
+                f"データベースファイルが見つかりません。\n\n"
+                f"パス: {db_path}\n\n"
+                f"対処方法:\n"
+                f"1. config.iniのパス設定を確認してください\n"
+                f"2. ファイルが存在するか確認してください\n"
+                f"3. ファイルのアクセス権限を確認してください")
+            return None
+            
         conn_str = (r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};' f'DBQ={db_path};')
         try:
             return pyodbc.connect(conn_str)
         except pyodbc.Error as ex:
-            sqlstate = ex.args[0]
-            messagebox.showerror("データベース接続エラー", f"エラーが発生しました: {sqlstate}\n{ex}")
+            error_code = ex.args[0] if ex.args else "不明"
+            error_msg = str(ex)
+            
+            # 具体的なエラーメッセージの生成
+            if "Microsoft Access Driver" in error_msg:
+                messagebox.showerror("ODBCドライバーエラー", 
+                    f"Microsoft Access ODBCドライバーが見つかりません。\n\n"
+                    f"対処方法:\n"
+                    f"1. Microsoft Access Database Engine をインストールしてください\n"
+                    f"2. 32bit/64bitの対応を確認してください\n\n"
+                    f"エラー詳細: {error_msg}")
+            elif "could not find file" in error_msg.lower():
+                messagebox.showerror("ファイルアクセスエラー", 
+                    f"データベースファイルにアクセスできません。\n\n"
+                    f"パス: {db_path}\n\n"
+                    f"対処方法:\n"
+                    f"1. ファイルが他のアプリケーションで使用されていないか確認\n"
+                    f"2. ファイルのアクセス権限を確認\n"
+                    f"3. ファイルが破損していないか確認\n\n"
+                    f"エラー詳細: {error_msg}")
+            else:
+                messagebox.showerror("データベース接続エラー", 
+                    f"データベースへの接続に失敗しました。\n\n"
+                    f"エラーコード: {error_code}\n"
+                    f"エラー詳細: {error_msg}\n\n"
+                    f"対処方法:\n"
+                    f"1. データベースファイルが正しいか確認\n"
+                    f"2. ODBCドライバーの設定を確認\n"
+                    f"3. 管理者権限で実行してみてください")
             return None
 
     def start_calculation_thread(self):
@@ -71,24 +158,181 @@ class MainController:
 
     def _get_user_inputs(self):
         inputs = {
-            'product_number': self.app.sample_pn_entry.get(),
-            'lot_size_str': self.app.sample_qty_entry.get(),
+            'product_number': self.app.sample_pn_entry.get().strip(),
+            'lot_size_str': self.app.sample_qty_entry.get().strip(),
             'start_date': self.app.sample_start_date_entry.get().strip() or None,
             'end_date': self.app.sample_end_date_entry.get().strip() or None,
-            'conf_str': self.app.sample_conf_entry.get().strip() or "99",
-            'c_str': self.app.sample_c_entry.get().strip() or "0"
+            'conf_str': self.app.sample_conf_entry.get().strip() or str(InspectionConstants.DEFAULT_CONFIDENCE),
+            'c_str': self.app.sample_c_entry.get().strip() or str(InspectionConstants.DEFAULT_C_VALUE)
         }
-        if not inputs['product_number']:
-            messagebox.showwarning("入力エラー", "品番を入力してください。")
+        
+        # 詳細なバリデーション
+        validation_errors = self._validate_inputs(inputs)
+        if validation_errors:
+            error_message = "以下の入力エラーがあります：\n" + "\n".join(f"• {error}" for error in validation_errors)
+            messagebox.showwarning("入力エラー", error_message)
             return None
+        
         try:
             inputs['lot_size'] = int(inputs['lot_size_str'])
             inputs['conf'] = float(inputs['conf_str']) / 100
             inputs['c'] = int(inputs['c_str'])
-        except ValueError:
-            messagebox.showwarning("入力エラー", "数量、信頼度、c値は数値で入力してください。")
+        except ValueError as e:
+            # より具体的なエラーメッセージ
+            if not inputs['lot_size_str']:
+                messagebox.showwarning("入力エラー", "数量は必須です。")
+            elif not inputs['lot_size_str'].isdigit():
+                messagebox.showwarning("入力エラー", f"数量「{inputs['lot_size_str']}」は正の整数で入力してください。")
+            elif not inputs['conf_str'].replace('.', '').isdigit():
+                messagebox.showwarning("入力エラー", f"信頼度「{inputs['conf_str']}」は0-100の数値で入力してください。")
+            elif not inputs['c_str'].isdigit():
+                messagebox.showwarning("入力エラー", f"c値「{inputs['c_str']}」は0以上の整数で入力してください。")
+            else:
+                messagebox.showwarning("入力エラー", "数量、信頼度、c値は数値で入力してください。")
             return None
+        
         return inputs
+
+    def _validate_inputs(self, inputs):
+        """入力値の詳細な検証"""
+        errors = []
+        
+        # 品番の検証
+        product_error = self._validate_product_number(inputs['product_number'])
+        if product_error:
+            errors.append(product_error)
+        
+        # 数量の検証
+        lot_size_error = self._validate_lot_size(inputs['lot_size_str'])
+        if lot_size_error:
+            errors.append(lot_size_error)
+        
+        # 信頼度の検証
+        conf_error = self._validate_confidence_level(inputs['conf_str'])
+        if conf_error:
+            errors.append(conf_error)
+        
+        # c値の検証
+        c_error = self._validate_c_value(inputs['c_str'], inputs.get('lot_size_str'))
+        if c_error:
+            errors.append(c_error)
+        
+        # 日付範囲の検証
+        date_error = self._validate_date_range(inputs['start_date'], inputs['end_date'])
+        if date_error:
+            errors.append(date_error)
+        
+        return errors
+
+    def _validate_product_number(self, product_number):
+        """品番の詳細な検証"""
+        if not product_number:
+            return "品番は必須です"
+        
+        if len(product_number.strip()) == 0:
+            return "品番に空白のみは入力できません"
+        
+        if len(product_number) > InspectionConstants.MAX_PRODUCT_NUMBER_LENGTH:
+            return f"品番は{InspectionConstants.MAX_PRODUCT_NUMBER_LENGTH}文字以内で入力してください"
+        
+        # 特殊文字のチェック
+        for char in InspectionConstants.INVALID_CHARS:
+            if char in product_number:
+                return f"品番に使用できない文字「{char}」が含まれています"
+        
+        return None
+
+    def _validate_lot_size(self, lot_size_str):
+        """ロットサイズの詳細な検証"""
+        if not lot_size_str:
+            return "数量は必須です"
+        
+        try:
+            lot_size = int(lot_size_str)
+            
+            if lot_size < InspectionConstants.MIN_LOT_SIZE:
+                return f"数量は{InspectionConstants.MIN_LOT_SIZE}以上の整数で入力してください"
+            
+            if lot_size > InspectionConstants.MAX_LOT_SIZE:
+                return f"数量は{InspectionConstants.MAX_LOT_SIZE:,}以下で入力してください"
+            
+            # 現実的な範囲チェック
+            if lot_size < InspectionConstants.MIN_RECOMMENDED_LOT_SIZE:
+                return f"数量が少なすぎます（{InspectionConstants.MIN_RECOMMENDED_LOT_SIZE}個以上推奨）"
+                
+        except ValueError:
+            return "数量は整数で入力してください"
+        
+        return None
+
+    def _validate_confidence_level(self, conf_str):
+        """信頼度の詳細な検証"""
+        if not conf_str:
+            return None  # デフォルト値を使用
+        
+        try:
+            conf = float(conf_str)
+            
+            if not 0 < conf <= 100:
+                return "信頼度は0より大きく100以下の数値で入力してください"
+            
+            # 一般的な信頼度の範囲チェック
+            if conf < InspectionConstants.MIN_CONFIDENCE:
+                return f"信頼度が低すぎます（{InspectionConstants.MIN_CONFIDENCE}%以上推奨）"
+            
+            if conf > InspectionConstants.MAX_CONFIDENCE:
+                return f"信頼度が高すぎます（{InspectionConstants.MAX_CONFIDENCE}%以下推奨）"
+                
+        except ValueError:
+            return "信頼度は数値で入力してください"
+        
+        return None
+
+    def _validate_c_value(self, c_str, lot_size_str):
+        """c値の詳細な検証"""
+        if not c_str:
+            return None  # デフォルト値を使用
+        
+        try:
+            c_value = int(c_str)
+            
+            if c_value < 0:
+                return "c値は0以上の整数で入力してください"
+            
+            # ロットサイズに対するc値の妥当性チェック
+            if lot_size_str:
+                try:
+                    lot_size = int(lot_size_str)
+                    max_c_value = int(lot_size * InspectionConstants.MAX_C_VALUE_RATIO)
+                    if c_value > max_c_value:
+                        return f"c値が大きすぎます（ロットサイズの{InspectionConstants.MAX_C_VALUE_RATIO*100:.0f}%以下推奨）"
+                except ValueError:
+                    pass  # ロットサイズの検証は別途行われる
+                    
+        except ValueError:
+            return "c値は整数で入力してください"
+        
+        return None
+
+    def _validate_date_range(self, start_date, end_date):
+        """日付範囲の検証"""
+        if start_date and end_date:
+            try:
+                start = datetime.strptime(start_date, '%Y-%m-%d')
+                end = datetime.strptime(end_date, '%Y-%m-%d')
+                
+                if start > end:
+                    return "開始日は終了日より前の日付を入力してください"
+                
+                # 未来の日付チェック
+                today = datetime.now()
+                if start > today or end > today:
+                    return "未来の日付は入力できません"
+                    
+            except ValueError:
+                return "日付はYYYY-MM-DD形式で入力してください"
+        
+        return None
 
     def _setup_progress_window(self):
         self.app.calc_button.config(state='disabled', text="🔄 計算中...", bg=self.app.MEDIUM_GRAY)
@@ -115,18 +359,42 @@ class MainController:
         try:
             self.app.after(0, lambda: self.detail_label.config(text="データベースに接続中..."))
             conn = self._get_db_connection()
-            if not conn: raise ConnectionError("DB接続に失敗")
+            if not conn: 
+                raise ConnectionError("データベース接続に失敗しました")
+                
             with conn.cursor() as cursor:
                 self.app.after(0, lambda: self.detail_label.config(text="不具合データを集計中..."))
                 db_data = self._fetch_data(cursor, inputs)
+                
                 self.app.after(0, lambda: self.detail_label.config(text="抜取検査数を計算中..."))
                 stats_results = self._calculate_stats(db_data, inputs)
+                
             self.app.after(0, lambda: self.detail_label.config(text="結果を表示中..."))
             self.app.after(0, self._update_ui, db_data, stats_results, inputs)
             self.app.after(0, self._finish_calculation, True)
+            
+        except ConnectionError as e:
+            # データベース接続エラーは既に詳細なメッセージが表示されている
+            self.app.after(0, self._finish_calculation, False)
+            
+        except pyodbc.Error as e:
+            error_msg = f"データベース操作中にエラーが発生しました。\n\nエラー詳細: {str(e)}"
+            self.app.after(0, lambda: messagebox.showerror("データベースエラー", error_msg))
+            self.app.after(0, self._finish_calculation, False)
+            
+        except ValueError as e:
+            error_msg = f"計算処理中に値エラーが発生しました。\n\nエラー詳細: {str(e)}\n\n入力値を確認してください。"
+            self.app.after(0, lambda: messagebox.showerror("計算エラー", error_msg))
+            self.app.after(0, self._finish_calculation, False)
+            
+        except OverflowError as e:
+            error_msg = f"計算結果が大きすぎます。\n\nエラー詳細: {str(e)}\n\n入力値を小さくして再試行してください。"
+            self.app.after(0, lambda: messagebox.showerror("計算エラー", error_msg))
+            self.app.after(0, self._finish_calculation, False)
+            
         except Exception as e:
-            if "DB接続に失敗" not in str(e):
-                self.app.after(0, lambda: messagebox.showerror("計算エラー", f"バックグラウンド処理中にエラーが発生しました: {e}"))
+            error_msg = f"予期しないエラーが発生しました。\n\nエラー詳細: {str(e)}\n\nアプリケーションを再起動してください。"
+            self.app.after(0, lambda: messagebox.showerror("システムエラー", error_msg))
             self.app.after(0, self._finish_calculation, False)
 
     def _finish_calculation(self, success):
@@ -176,31 +444,43 @@ class MainController:
     def _calculate_stats(self, db_data, inputs):
         results = {}
         p = db_data['defect_rate'] / 100
-        if db_data['defect_rate'] == 0:
-            results['level_text'] = "ゆるい(I)"
-            results['level_reason'] = "過去の不具合が0件だったため、最もゆるい水準（I）を適用しています。"
-        elif 0 < db_data['defect_rate'] <= 0.5:
-            results['level_text'] = "普通(II)"
-            results['level_reason'] = "過去の不具合率が0.5%以下だったため、普通水準（II）を適用しています。"
+        
+        # 検査水準の判定（定数を使用）
+        defect_rate = db_data['defect_rate']
+        if defect_rate == 0:
+            level_info = InspectionConstants.INSPECTION_LEVELS['loose']
+        elif defect_rate <= InspectionConstants.DEFECT_RATE_THRESHOLD_NORMAL:
+            level_info = InspectionConstants.INSPECTION_LEVELS['normal']
         else:
-            results['level_text'] = "きつい(III)"
-            results['level_reason'] = "過去の不具合率が0.5%を超えていたため、きつい水準（III）を適用しています。"
+            level_info = InspectionConstants.INSPECTION_LEVELS['strict']
+        
+        results['level_text'] = level_info['name']
+        results['level_reason'] = level_info['description']
+        
+        # 抜取検査数の計算
         n_sample = "計算不可"
         if p > 0 and 0 < inputs['conf'] < 1:
             try:
                 if inputs['c'] == 0:
                     n_sample = math.ceil(math.log(1 - inputs['conf']) / math.log(1 - p))
                 else:
-                    low, high = 1, max(inputs['lot_size'] * 2, 10000)
+                    low, high = 1, max(
+                        inputs['lot_size'] * InspectionConstants.MAX_SAMPLE_SIZE_MULTIPLIER, 
+                        InspectionConstants.MAX_CALCULATION_LIMIT
+                    )
                     n_sample = f">{high} (計算断念)"
                     while low <= high:
                         mid = (low + high) // 2
-                        if mid == 0: low = 1; continue
+                        if mid == 0: 
+                            low = 1
+                            continue
                         if binom.cdf(inputs['c'], mid, p) >= 1 - inputs['conf']:
                             n_sample, high = mid, mid - 1
                         else:
                             low = mid + 1
-            except (ValueError, OverflowError): n_sample = "計算エラー"
+            except (ValueError, OverflowError): 
+                n_sample = "計算エラー"
+        
         results['sample_size'] = n_sample
         return results
 
@@ -277,7 +557,7 @@ class MainController:
         try:
             filepath = filedialog.asksaveasfilename(
                 title="結果を名前を付けて保存",defaultextension=".txt",
-                filetypes=[("テキストファイル", "*.txt"), ("すべてのファイル", "*.*รา")],
+                filetypes=[("テキストファイル", "*.txt"), ("すべてのファイル", "*.*")],
                 initialfile=f"検査結果_{self.last_inputs['product_number']}.txt"
             )
             if not filepath: return
@@ -286,9 +566,24 @@ class MainController:
         except Exception as e:
             messagebox.showerror("エクスポート失敗", f"ファイルの保存中にエラーが発生しました: {e}")
 
-    def _fetch_all_product_numbers(self):
+
+    def _fetch_all_product_numbers(self, force_refresh=False):
+        if not force_refresh:
+            with self._product_numbers_cache_lock:
+                if self._product_numbers_cache is not None:
+                    return list(self._product_numbers_cache)
+
+        product_numbers = self._query_product_numbers_from_db()
+        if product_numbers is None:
+            return []
+        with self._product_numbers_cache_lock:
+            self._product_numbers_cache = list(product_numbers)
+        return product_numbers
+
+    def _query_product_numbers_from_db(self):
         conn = self._get_db_connection()
-        if not conn: return []
+        if not conn:
+            return None
         try:
             with conn.cursor() as cursor:
                 sql = "SELECT DISTINCT [品番] FROM t_不具合情報 ORDER BY [品番]"
@@ -296,9 +591,11 @@ class MainController:
                 return [row[0] for row in rows if row[0]]
         except pyodbc.Error as e:
             messagebox.showerror("データベースエラー", f"品番リストの取得中にエラーが発生しました: {e}")
-            return []
+            return None
         finally:
-            if conn: conn.close()
+            if conn:
+                conn.close()
+
 
     def show_product_numbers_list(self):
         product_numbers = self._fetch_all_product_numbers()
@@ -315,12 +612,14 @@ class MainController:
         listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set)
         scrollbar.config(command=listbox.yview)
         scrollbar.pack(side='right', fill='y'); listbox.pack(side='left', fill='both', expand=True)
-        for pn in product_numbers: listbox.insert('end', pn)
+        searchable_items = [(pn, pn.lower()) for pn in product_numbers]
+        for pn, _ in searchable_items: listbox.insert('end', pn)
         def update_listbox(*args):
-            search_term = search_var.get().lower()
+            search_term = search_var.get().strip().lower()
             listbox.delete(0, 'end')
-            for pn in product_numbers:
-                if search_term in pn.lower(): listbox.insert('end', pn)
+            for pn, pn_lower in searchable_items:
+                if not search_term or search_term in pn_lower:
+                    listbox.insert('end', pn)
         search_var.trace("w", update_listbox)
         def on_double_click(event):
             selected_indices = listbox.curselection()
