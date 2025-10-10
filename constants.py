@@ -14,22 +14,22 @@ class InspectionConstants:
     DEFECT_RATE_THRESHOLD_NORMAL = 0.5  # 普通水準の閾値
     DEFECT_RATE_THRESHOLD_STRICT = 0.5  # きつい水準の閾値
     
-    # 検査水準の定義
+    # 検査水準の定義（簡素化版）
     INSPECTION_LEVELS = {
         'loose': {
             'threshold': 0, 
-            'name': 'ゆるい(I)', 
-            'description': '過去の不具合が0件だったため、最もゆるい水準（I）を適用しています。'
+            'name': '緩和検査', 
+            'description': 'AQL値に基づく緩和された統計的設計'
         },
         'normal': {
             'threshold': 0.5, 
-            'name': '普通(II)', 
-            'description': '過去の不具合率が0.5%以下だったため、普通水準（II）を適用しています。'
+            'name': '標準検査', 
+            'description': 'AQL値に基づく標準的な統計的設計'
         },
         'strict': {
             'threshold': float('inf'), 
-            'name': 'きつい(III)', 
-            'description': '過去の不具合率が0.5%を超えていたため、きつい水準（III）を適用しています。'
+            'name': '厳格検査', 
+            'description': 'AQL値に基づく厳格な統計的設計'
         }
     }
     

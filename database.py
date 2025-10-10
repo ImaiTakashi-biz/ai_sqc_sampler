@@ -47,7 +47,8 @@ class DatabaseManager:
             return conn
             
         except pyodbc.Error as e:
-            self.security_manager.log_security_event("DB_CONNECTION_ERROR", f"DB接続エラー: {str(e)}")
+            sanitized_error = self.security_manager.sanitize_error_message(str(e))
+            self.security_manager.log_security_event("DB_CONNECTION_ERROR", f"DB接続エラー: {sanitized_error}")
             if "Microsoft Access Driver" in str(e):
                 messagebox.showerror("ドライバーエラー", 
                     "Microsoft Access Driverが見つかりません。\n"
@@ -58,44 +59,12 @@ class DatabaseManager:
                 messagebox.showerror("データベースエラー", f"データベース接続に失敗しました:\n{sanitized_error}")
             return None
         except Exception as e:
-            self.security_manager.log_security_event("UNEXPECTED_ERROR", f"予期しないエラー: {str(e)}")
+            sanitized_error = self.security_manager.sanitize_error_message(str(e))
+            self.security_manager.log_security_event("UNEXPECTED_ERROR", f"予期しないエラー: {sanitized_error}")
             # エラーメッセージをサニタイズ
             sanitized_error = self.security_manager.sanitize_error_message(str(e))
             messagebox.showerror("エラー", f"予期しないエラーが発生しました:\n{sanitized_error}")
             return None
-    
-    def get_defect_data(self, product_number, start_date=None, end_date=None):
-        """不具合データの取得"""
-        conn = self.get_db_connection()
-        if not conn:
-            return None
-        
-        try:
-            with conn.cursor() as cursor:
-                has_start_date = start_date is not None and str(start_date).strip() and str(start_date).strip() != "" and str(start_date).strip() != "None"
-                has_end_date = end_date is not None and str(end_date).strip() and str(end_date).strip() != "" and str(end_date).strip() != "None"
-                
-                if has_start_date and has_end_date:
-                    sql = "SELECT * FROM t_不具合情報 WHERE [品番] = ? AND [日付] >= ? AND [日付] <= ?"
-                    params = [product_number, str(start_date).strip(), str(end_date).strip()]
-                elif has_start_date:
-                    sql = "SELECT * FROM t_不具合情報 WHERE [品番] = ? AND [日付] >= ?"
-                    params = [product_number, str(start_date).strip()]
-                elif has_end_date:
-                    sql = "SELECT * FROM t_不具合情報 WHERE [品番] = ? AND [日付] <= ?"
-                    params = [product_number, str(end_date).strip()]
-                else:
-                    sql = "SELECT * FROM t_不具合情報 WHERE [品番] = ?"
-                    params = [product_number]
-                
-                rows = cursor.execute(sql, params).fetchall()
-                return rows
-        except pyodbc.Error as e:
-            messagebox.showerror("データベースエラー", f"不具合データの取得中にエラーが発生しました: {e}")
-            return None
-        finally:
-            if conn:
-                conn.close()
     
     def fetch_all_product_numbers(self, force_refresh=False):
         """全品番の取得（キャッシュ機能付き）"""
@@ -126,7 +95,8 @@ class DatabaseManager:
                 product_numbers = list(dict.fromkeys(raw_numbers))  # 重複削除
                 return product_numbers
         except pyodbc.Error as e:
-            messagebox.showerror("データベースエラー", f"品番リストの取得中にエラーが発生しました: {e}")
+            sanitized_error = self.security_manager.sanitize_error_message(str(e))
+            messagebox.showerror("データベースエラー", f"品番リストの取得中にエラーが発生しました: {sanitized_error}")
             return None
         finally:
             if conn:
@@ -144,7 +114,8 @@ class DatabaseManager:
                 count = cursor.fetchone()[0]
                 return True, f"接続成功: {count}件のレコードを確認"
         except pyodbc.Error as e:
-            return False, f"テーブルアクセスエラー: {e}"
+            sanitized_error = self.security_manager.sanitize_error_message(str(e))
+            return False, f"テーブルアクセスエラー: {sanitized_error}"
         finally:
             if conn:
                 conn.close()

@@ -6,6 +6,7 @@
 import tkinter as tk
 from tkinter import messagebox
 import threading
+from security_manager import SecurityManager
 
 
 class ProductListManager:
@@ -14,6 +15,7 @@ class ProductListManager:
     def __init__(self, app, db_manager):
         self.app = app
         self.db_manager = db_manager
+        self.security_manager = SecurityManager()
     
     def show_product_numbers_list(self):
         """品番リストの表示（非同期読み込み）"""
@@ -64,7 +66,8 @@ class ProductListManager:
         except Exception as e:
             if progress_window and progress_window.winfo_exists():
                 progress_window.destroy()
-            error_message = f"品番リストの読み込み中にエラーが発生しました:\n{str(e)}"
+            sanitized_error = self.security_manager.sanitize_error_message(str(e))
+            error_message = f"品番リストの読み込み中にエラーが発生しました:\n{sanitized_error}"
             self.app.after(0, lambda: messagebox.showerror("エラー", error_message))
 
     def show_product_numbers_result(self, product_numbers):

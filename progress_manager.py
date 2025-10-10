@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
 import pyodbc
+from security_manager import SecurityManager
 
 
 class ProgressManager:
@@ -17,6 +18,7 @@ class ProgressManager:
         self.db_manager = db_manager
         self.calculation_engine = calculation_engine
         self.ui_manager = ui_manager
+        self.security_manager = SecurityManager()
     
     def setup_progress_window(self):
         """プログレスウィンドウの設定"""
@@ -91,22 +93,26 @@ class ProgressManager:
             self.app.after(0, self.finish_calculation, False)
             
         except pyodbc.Error as e:
-            error_msg = f"データベースエラー: {str(e)}"
+            sanitized_error = self.security_manager.sanitize_error_message(str(e))
+            error_msg = f"データベースエラー: {sanitized_error}"
             self.app.after(0, lambda: messagebox.showerror("データベースエラー", error_msg))
             self.app.after(0, self.finish_calculation, False)
             
         except ValueError as e:
-            error_msg = f"計算エラー: {str(e)}"
+            sanitized_error = self.security_manager.sanitize_error_message(str(e))
+            error_msg = f"計算エラー: {sanitized_error}"
             self.app.after(0, lambda: messagebox.showerror("計算エラー", error_msg))
             self.app.after(0, self.finish_calculation, False)
             
         except OverflowError as e:
-            error_msg = f"計算範囲エラー: {str(e)}"
+            sanitized_error = self.security_manager.sanitize_error_message(str(e))
+            error_msg = f"計算範囲エラー: {sanitized_error}"
             self.app.after(0, lambda: messagebox.showerror("計算範囲エラー", error_msg))
             self.app.after(0, self.finish_calculation, False)
             
         except Exception as e:
-            error_msg = f"予期しないエラー: {str(e)}"
+            sanitized_error = self.security_manager.sanitize_error_message(str(e))
+            error_msg = f"予期しないエラー: {sanitized_error}"
             self.app.after(0, lambda: messagebox.showerror("システムエラー", error_msg))
             self.app.after(0, self.finish_calculation, False)
 

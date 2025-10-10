@@ -6,6 +6,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import os
+from security_manager import SecurityManager
 
 
 class SettingsDialog:
@@ -14,6 +15,7 @@ class SettingsDialog:
     def __init__(self, parent, config_manager):
         self.parent = parent
         self.config_manager = config_manager
+        self.security_manager = getattr(config_manager, "security_manager", SecurityManager())
         self.dialog = None
         self.db_path_var = None
         self.confidence_var = None
@@ -282,7 +284,8 @@ class SettingsDialog:
                 self.db_path_var.set(file_path)
                 
         except Exception as e:
-            messagebox.showerror("エラー", f"ファイル選択中にエラーが発生しました:\n{str(e)}")
+            sanitized_error = self.security_manager.sanitize_error_message(str(e))
+            messagebox.showerror("エラー", f"ファイル選択中にエラーが発生しました:\n{sanitized_error}")
     
     def _test_database_connection(self):
         """データベース接続のテスト"""
@@ -314,9 +317,11 @@ class SettingsDialog:
                     "Microsoft Access Driverが見つかりません。\n"
                     "Microsoft Access Database Engine 2016 Redistributableをインストールしてください。")
             else:
-                messagebox.showerror("接続エラー", f"データベース接続に失敗しました:\n{str(e)}")
+                sanitized_error = self.security_manager.sanitize_error_message(str(e))
+                messagebox.showerror("接続エラー", f"データベース接続に失敗しました:\n{sanitized_error}")
         except Exception as e:
-            messagebox.showerror("エラー", f"接続テスト中にエラーが発生しました:\n{str(e)}")
+            sanitized_error = self.security_manager.sanitize_error_message(str(e))
+            messagebox.showerror("エラー", f"接続テスト中にエラーが発生しました:\n{sanitized_error}")
     
     def _reset_to_defaults(self):
         """設定をデフォルトにリセット"""
@@ -353,7 +358,8 @@ class SettingsDialog:
         except ValueError:
             messagebox.showerror("エラー", "入力値が正しくありません。数値を確認してください。")
         except Exception as e:
-            messagebox.showerror("エラー", f"設定の保存中にエラーが発生しました:\n{str(e)}")
+            sanitized_error = self.security_manager.sanitize_error_message(str(e))
+            messagebox.showerror("エラー", f"設定の保存中にエラーが発生しました:\n{sanitized_error}")
     
     def _cancel(self):
         """キャンセルボタンの処理"""

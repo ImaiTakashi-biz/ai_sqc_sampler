@@ -15,50 +15,6 @@ class InputValidator:
     def __init__(self):
         self.security_manager = SecurityManager()
     
-    @staticmethod
-    def validate_all_inputs(product_number, lot_size_str, conf_str, c_str, start_date_str=None, end_date_str=None):
-        """全入力値の検証"""
-        errors = []
-        validated_data = {}
-        
-        # 品番の検証
-        validator = InputValidator()
-        product_error = validator.validate_product_number(product_number)
-        if product_error:
-            errors.append(product_error)
-        else:
-            validated_data['product_number'] = product_number.strip()
-        
-        # ロットサイズの検証
-        lot_size_error, lot_size = InputValidator.validate_lot_size(lot_size_str)
-        if lot_size_error:
-            errors.append(lot_size_error)
-        else:
-            validated_data['lot_size'] = lot_size
-        
-        # 信頼度の検証
-        conf_error, confidence_level = InputValidator.validate_confidence_level(conf_str)
-        if conf_error:
-            errors.append(conf_error)
-        else:
-            validated_data['confidence_level'] = confidence_level
-        
-        # c値の検証
-        c_error, c_value = InputValidator.validate_c_value(c_str, lot_size)
-        if c_error:
-            errors.append(c_error)
-        else:
-            validated_data['c_value'] = c_value
-        
-        # 日付範囲の検証
-        date_error, dates = InputValidator.validate_date_range(start_date_str, end_date_str)
-        if date_error:
-            errors.append(date_error)
-        else:
-            validated_data['start_date'], validated_data['end_date'] = dates
-        
-        return len(errors) == 0, errors, validated_data
-    
     def validate_product_number(self, product_number):
         """品番の検証"""
         if not product_number or not product_number.strip():
@@ -179,3 +135,146 @@ class InputValidator:
             return "終了日に未来の日付は入力できません", (None, None)
         
         return None, (start_date, end_date)
+    
+    @staticmethod
+    def validate_aql_ltpd_inputs(product_number, lot_size_str, aql_str, ltpd_str, alpha_str, beta_str, c_str, start_date_str=None, end_date_str=None):
+        """AQL/LTPD設計の全入力値の検証"""
+        errors = []
+        validated_data = {}
+        
+        # 品番の検証
+        validator = InputValidator()
+        product_error = validator.validate_product_number(product_number)
+        if product_error:
+            errors.append(product_error)
+        else:
+            validated_data['product_number'] = product_number.strip()
+        
+        # ロットサイズの検証
+        lot_size_error, lot_size = InputValidator.validate_lot_size(lot_size_str)
+        if lot_size_error:
+            errors.append(lot_size_error)
+        else:
+            validated_data['lot_size'] = lot_size
+        
+        # AQLの検証
+        aql_error, aql = InputValidator.validate_aql(aql_str)
+        if aql_error:
+            errors.append(aql_error)
+        else:
+            validated_data['aql'] = aql
+        
+        # LTPDの検証
+        ltpd_error, ltpd = InputValidator.validate_ltpd(ltpd_str, aql)
+        if ltpd_error:
+            errors.append(ltpd_error)
+        else:
+            validated_data['ltpd'] = ltpd
+        
+        # α（生産者危険）の検証
+        alpha_error, alpha = InputValidator.validate_alpha(alpha_str)
+        if alpha_error:
+            errors.append(alpha_error)
+        else:
+            validated_data['alpha'] = alpha
+        
+        # β（消費者危険）の検証
+        beta_error, beta = InputValidator.validate_beta(beta_str)
+        if beta_error:
+            errors.append(beta_error)
+        else:
+            validated_data['beta'] = beta
+        
+        # c値の検証
+        c_error, c_value = InputValidator.validate_c_value(c_str, lot_size)
+        if c_error:
+            errors.append(c_error)
+        else:
+            validated_data['c_value'] = c_value
+        
+        # 日付範囲の検証
+        date_error, dates = InputValidator.validate_date_range(start_date_str, end_date_str)
+        if date_error:
+            errors.append(date_error)
+        else:
+            validated_data['start_date'], validated_data['end_date'] = dates
+        
+        return len(errors) == 0, errors, validated_data
+    
+    @staticmethod
+    def validate_aql(aql_str):
+        """AQL（合格品質水準）の検証"""
+        if not aql_str or not aql_str.strip():
+            return None, 0.25  # デフォルト値
+        
+        try:
+            aql = float(aql_str.strip())
+            
+            if aql <= 0:
+                return "AQLは0より大きい数値で入力してください", None
+            
+            if aql > 10.0:
+                return "AQLは10%以下で入力してください", None
+            
+            return None, aql
+            
+        except ValueError:
+            return "AQLは数値で入力してください", None
+    
+    @staticmethod
+    def validate_ltpd(ltpd_str, aql=None):
+        """LTPD（不合格品質水準）の検証"""
+        if not ltpd_str or not ltpd_str.strip():
+            return None, 1.0  # デフォルト値
+        
+        try:
+            ltpd = float(ltpd_str.strip())
+            
+            if ltpd <= 0:
+                return "LTPDは0より大きい数値で入力してください", None
+            
+            if ltpd > 20.0:
+                return "LTPDは20%以下で入力してください", None
+            
+            # AQLとの関係性チェック
+            if aql and ltpd <= aql:
+                return "LTPDはAQLより大きい値で入力してください", None
+            
+            return None, ltpd
+            
+        except ValueError:
+            return "LTPDは数値で入力してください", None
+    
+    @staticmethod
+    def validate_alpha(alpha_str):
+        """α（生産者危険）の検証"""
+        if not alpha_str or not alpha_str.strip():
+            return None, 5.0  # デフォルト値
+        
+        try:
+            alpha = float(alpha_str.strip())
+            
+            if not 0 < alpha <= 50:
+                return "α（生産者危険）は0より大きく50%以下の数値で入力してください", None
+            
+            return None, alpha
+            
+        except ValueError:
+            return "α（生産者危険）は数値で入力してください", None
+    
+    @staticmethod
+    def validate_beta(beta_str):
+        """β（消費者危険）の検証"""
+        if not beta_str or not beta_str.strip():
+            return None, 10.0  # デフォルト値
+        
+        try:
+            beta = float(beta_str.strip())
+            
+            if not 0 < beta <= 50:
+                return "β（消費者危険）は0より大きく50%以下の数値で入力してください", None
+            
+            return None, beta
+            
+        except ValueError:
+            return "β（消費者危険）は数値で入力してください", None

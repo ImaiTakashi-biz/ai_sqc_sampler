@@ -5,6 +5,7 @@
 
 from tkinter import filedialog, messagebox
 from datetime import datetime
+from security_manager import SecurityManager
 
 
 class ExportManager:
@@ -12,6 +13,7 @@ class ExportManager:
     
     def __init__(self, app):
         self.app = app
+        self.security_manager = SecurityManager()
     
     def export_results(self):
         """結果のエクスポート"""
@@ -27,21 +29,30 @@ class ExportManager:
         )
         sample_size_disp = self.app.controller.ui_manager.format_int(self.app.controller.last_stats_results['sample_size'])
         
-        content = f"""AI SQC Sampler - 計算結果
+        content = f"""AI SQC Sampler - 計算結果（AQL/LTPD設計）
 計算日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-{'=' * 50}
+{'=' * 60}
 
 品番: {self.app.controller.last_inputs['product_number']}
 ロットサイズ: {self.app.controller.ui_manager.format_int(self.app.controller.last_inputs['lot_size'])}個
 不具合率: {self.app.controller.last_db_data['defect_rate']:.2f}%
 検査水準: {self.app.controller.last_stats_results['level_text']}
 サンプルサイズ: {sample_size_disp} 個
-信頼度: {self.app.controller.last_inputs['confidence_level']:.1f}%
-c値: {self.app.controller.last_inputs['c_value']}
+
+【AQL/LTPD設計パラメータ】
+AQL（合格品質水準）: {self.app.controller.last_stats_results.get('aql', self.app.controller.last_inputs.get('aql', 0.25)):.3f}%
+LTPD（不合格品質水準）: {self.app.controller.last_stats_results.get('ltpd', self.app.controller.last_inputs.get('ltpd', 1.0)):.3f}%
+α（生産者危険）: {self.app.controller.last_inputs.get('alpha', 5.0):.1f}%
+β（消費者危険）: {self.app.controller.last_inputs.get('beta', 10.0):.1f}%
+c値（許容不良数）: {self.app.controller.last_inputs.get('c_value', 0)}
 
 {texts['review']}
 
 {texts['best5']}
+
+{self._get_adjustment_info()}
+
+{self._get_guidance_info()}
 """
         
         try:
@@ -57,5 +68,23 @@ c値: {self.app.controller.last_inputs['c_value']}
                 f.write(content)
             messagebox.showinfo("成功", f"結果を保存しました。\nパス: {filepath}")
         except Exception as e:
-            messagebox.showerror("エクスポート失敗", f"ファイルの保存中にエラーが発生しました: {e}")
-
+            sanitized_error = self.security_manager.sanitize_error_message(str(e))
+            messagebox.showerror("エクスポート失敗", f"ファイルの保存中にエラーが発生しました: {sanitized_error}")
+    
+    def _get_adjustment_info(self):
+        """調整情報の取得"""
+        if 'adjustment_info' in self.app.controller.last_stats_results and self.app.controller.last_stats_results['adjustment_info']:
+            return self.app.controller.last_stats_results['adjustment_info']
+        return ""
+    
+    def _get_guidance_info(self):
+        """ガイダンス情報の取得"""
+        guidance_parts = []
+        
+        if 'guidance_message' in self.app.controller.last_stats_results and self.app.controller.last_stats_results['guidance_message']:
+            guidance_parts.append(self.app.controller.last_stats_results['guidance_message'])
+        
+        if 'warning_message' in self.app.controller.last_stats_results and self.app.controller.last_stats_results['warning_message']:
+            guidance_parts.append(f"【警告】\n{self.app.controller.last_stats_results['warning_message']}")
+        
+        return "\n\n".join(guidance_parts) if guidance_parts else ""

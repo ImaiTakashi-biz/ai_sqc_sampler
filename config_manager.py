@@ -134,7 +134,8 @@ class ConfigManager:
             return None
             
         except Exception as e:
-            messagebox.showerror("エラー", f"ファイル選択中にエラーが発生しました:\n{str(e)}")
+            sanitized_error = self.security_manager.sanitize_error_message(str(e))
+            messagebox.showerror("エラー", f"ファイル選択中にエラーが発生しました:\n{sanitized_error}")
             return None
     
     def get(self, key, default=None):
