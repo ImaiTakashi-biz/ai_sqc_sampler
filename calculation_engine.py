@@ -7,7 +7,6 @@ AQL/LTPD設計に基づく抜取検査計算
 import math
 from functools import lru_cache
 
-from scipy.stats import binom, hypergeom
 from constants import InspectionConstants, DEFECT_COLUMNS
 
 SAMPLE_SIZE_CACHE_LIMIT = 128
@@ -19,13 +18,28 @@ _BASE_DEFECT_AGGREGATE_SQL = (
 )
 
 
+_BINOM = None
+_HYPERGEOM = None
+
+
+def _ensure_scipy_distributions():
+    global _BINOM, _HYPERGEOM
+    if _BINOM is None or _HYPERGEOM is None:
+        from scipy.stats import binom as sp_binom, hypergeom as sp_hypergeom
+        _BINOM = sp_binom
+        _HYPERGEOM = sp_hypergeom
+    return _BINOM, _HYPERGEOM
+
+
 @lru_cache(maxsize=512)
 def _cached_binom_cdf(c_value, sample_size, defect_rate):
+    binom, _ = _ensure_scipy_distributions()
     return binom.cdf(c_value, sample_size, defect_rate)
 
 
 @lru_cache(maxsize=512)
 def _cached_hypergeom_cdf(c_value, population_size, defect_count, sample_size):
+    _, hypergeom = _ensure_scipy_distributions()
     return hypergeom.cdf(c_value, population_size, defect_count, sample_size)
 
 

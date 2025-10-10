@@ -4,56 +4,59 @@ AQL/LTPD設計の根拠を視覚化
 """
 
 import tkinter as tk
-from tkinter import ttk
-import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import numpy as np
-from scipy.stats import binom, hypergeom
 
 
 class OCCurveManager:
     """OCカーブ管理クラス"""
     
     def __init__(self):
-        # 日本語フォントの設定
-        self.setup_japanese_font()
+        self._plot_modules = None
     
-    def setup_japanese_font(self):
-        """日本語フォントの設定"""
-        try:
-            # Windows環境での日本語フォント設定（利用可能なフォントのみ）
+    def _ensure_plot_modules(self):
+        if self._plot_modules is None:
+            import matplotlib.pyplot as plt
             import matplotlib.font_manager as fm
-            
-            # 利用可能な日本語フォントを検索
+            from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+            from scipy.stats import binom as sp_binom, hypergeom as sp_hypergeom
+
+            self._plot_modules = {
+                'plt': plt,
+                'fm': fm,
+                'FigureCanvasTkAgg': FigureCanvasTkAgg,
+                'binom': sp_binom,
+                'hypergeom': sp_hypergeom,
+            }
+            self._setup_japanese_font(self._plot_modules)
+
+        return self._plot_modules
+
+    def _setup_japanese_font(self, modules):
+        plt = modules['plt']
+        fm = modules['fm']
+        try:
             available_fonts = [f.name for f in fm.fontManager.ttflist]
             japanese_fonts = []
-            
-            # Windows標準の日本語フォントを優先
+
             windows_fonts = ['MS Gothic', 'MS Mincho', 'Meiryo', 'Yu Gothic', 'MS PGothic', 'MS PMincho']
             for font in windows_fonts:
                 if font in available_fonts:
                     japanese_fonts.append(font)
-            
-            # その他の日本語フォント
+
             other_fonts = ['Hiragino Sans', 'Takao', 'IPAexGothic', 'IPAPGothic', 'VL PGothic', 'Noto Sans CJK JP']
             for font in other_fonts:
                 if font in available_fonts:
                     japanese_fonts.append(font)
-            
-            # フォント設定
+
             if japanese_fonts:
                 plt.rcParams['font.family'] = japanese_fonts + ['DejaVu Sans']
             else:
-                # 日本語フォントが見つからない場合は英語フォントを使用
                 plt.rcParams['font.family'] = ['DejaVu Sans']
-                print("警告: 日本語フォントが見つかりません。グラフの日本語表示に問題がある可能性があります。")
-                
+                print('警告: 日本語フォントが見つかりません。グラフの日本語表示に問題がある可能性があります。')
+
         except Exception as e:
-            # エラーが発生した場合はデフォルトフォントを使用
             plt.rcParams['font.family'] = ['DejaVu Sans']
-            print(f"フォント設定エラー: {e}")
-    
+            print(f'フォント設定エラー: {e}')
+
     def create_oc_curve_dialog(self, parent, oc_data, aql, ltpd, alpha, beta, n_sample, c_value, lot_size):
         """OCカーブ表示ダイアログの作成"""
         dialog = tk.Toplevel(parent)
@@ -144,6 +147,9 @@ class OCCurveManager:
     
     def draw_oc_curve(self, parent, oc_data, aql, ltpd, alpha, beta, n_sample, c_value, lot_size):
         """OCカーブの描画"""
+        modules = self._ensure_plot_modules()
+        plt = modules['plt']
+        FigureCanvasTkAgg = modules['FigureCanvasTkAgg']
         # 図の作成
         fig, ax = plt.subplots(figsize=(10, 6))
         fig.patch.set_facecolor('#f8f9fa')
@@ -191,6 +197,9 @@ class OCCurveManager:
     
     def calculate_acceptance_probability(self, n_sample, c_value, lot_size, defect_rate_percent):
         """合格確率の計算"""
+        modules = self._ensure_plot_modules()
+        binom = modules['binom']
+        hypergeom = modules['hypergeom']
         defect_rate = defect_rate_percent / 100.0
         
         # 有限母集団補正の判定
