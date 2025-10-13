@@ -20,6 +20,15 @@ class ProgressManager:
         self.ui_manager = ui_manager
         self.security_manager = SecurityManager()
     
+    def _set_status(self, text):
+        """プログレスウィンドウのステータス表示を更新"""
+        if not hasattr(self, 'status_label'):
+            return
+        def _update():
+            self.status_label.config(text=text)
+            self.status_label.update_idletasks()
+        self.app.after(0, _update)
+    
     def setup_progress_window(self):
         """プログレスウィンドウの設定"""
         self.progress_window = tk.Toplevel(self.app)
@@ -46,6 +55,13 @@ class ProgressManager:
             bg="#f0f0f0"
         )
         self.status_label.pack(pady=10)
+        tk.Label(
+            self.progress_window,
+            text="処理が完了すると自動的に閉じます。",
+            font=("Meiryo", 9),
+            fg="#6c757d",
+            bg="#f0f0f0"
+        ).pack()
         
         # モーダル表示
         self.progress_window.transient(self.app)
@@ -65,7 +81,7 @@ class ProgressManager:
         conn = None
         try:
             # ステータス更新
-            self.app.after(0, lambda: self.status_label.config(text="データベースに接続中..."))
+            self._set_status("1/4 データベースに接続中...")
             
             # データベース接続
             conn = self.db_manager.get_db_connection()
@@ -74,19 +90,19 @@ class ProgressManager:
             
             with conn.cursor() as cursor:
                 # ステータス更新
-                self.app.after(0, lambda: self.status_label.config(text="不具合データを集計中..."))
+                self._set_status("2/4 不具合データを集計中...")
                 
                 # データの取得
                 db_data = self.calculation_engine.fetch_data(cursor, inputs)
                 
                 # ステータス更新
-                self.app.after(0, lambda: self.status_label.config(text="抜取検査数を計算中..."))
+                self._set_status("3/4 抜取検査数を計算中...")
                 
                 # 統計計算
                 stats_results = self.calculation_engine.calculate_stats(db_data, inputs)
                 
             # ステータス更新
-            self.app.after(0, lambda: self.status_label.config(text="結果を表示中..."))
+            self._set_status("4/4 結果を表示中...")
             
             # UI更新
             self.app.after(0, self.ui_manager.update_ui, db_data, stats_results, inputs)

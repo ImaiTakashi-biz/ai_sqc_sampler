@@ -82,17 +82,19 @@ class CalculationEngine:
         data['defect_rate'] = (total_defect / total_qty * 100) if total_qty > 0 else 0
         
         defect_counts = row[2:]
-        defect_rates = []
         if total_qty > 0 and defect_counts:
-            for col, count in zip(DEFECT_COLUMNS, defect_counts):
-                count = count or 0
-                if count > 0:
-                    rate = (count / total_qty * 100)
-                    defect_rates.append((col, rate, count))
-        
-        defect_rates.sort(key=lambda x: x[2], reverse=True)
-        data['defect_rates_sorted'] = defect_rates
-        data['best5'] = [(col, count) for col, rate, count in defect_rates[:5]]
+            totals = float(total_qty)
+            defect_rates = [
+                (col, (count or 0) / totals * 100.0, count or 0)
+                for col, count in zip(DEFECT_COLUMNS, defect_counts)
+                if (count or 0) > 0
+            ]
+            defect_rates.sort(key=lambda x: x[2], reverse=True)
+            data['defect_rates_sorted'] = defect_rates
+            data['best5'] = [(col, count) for col, _, count in defect_rates[:5]]
+        else:
+            data['defect_rates_sorted'] = []
+            data['best5'] = []
         return data
 
     def calculate_stats(self, db_data, inputs):

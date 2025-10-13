@@ -89,11 +89,14 @@ class DatabaseManager:
         
         try:
             with conn.cursor() as cursor:
-                sql = "SELECT [品番] FROM t_不具合情報 WHERE [品番] IS NOT NULL AND [品番] <> '' ORDER BY [品番]"
+                sql = (
+                    "SELECT DISTINCT [品番] "
+                    "FROM t_不具合情報 "
+                    "WHERE [品番] IS NOT NULL AND [品番] <> '' "
+                    "ORDER BY [品番]"
+                )
                 rows = cursor.execute(sql).fetchall()
-                raw_numbers = [row[0] for row in rows if row[0]]
-                product_numbers = list(dict.fromkeys(raw_numbers))  # 重複削除
-                return product_numbers
+                return [row[0] for row in rows if row[0]]
         except pyodbc.Error as e:
             sanitized_error = self.security_manager.sanitize_error_message(str(e))
             messagebox.showerror("データベースエラー", f"品番リストの取得中にエラーが発生しました: {sanitized_error}")

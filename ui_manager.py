@@ -218,10 +218,10 @@ class UIManager:
         self.app.level_label.pack()
         
         # 6. display optional action buttons
-        if hasattr(self.app, 'inspection_level_button'):
-            self.app.inspection_level_button.pack(pady=(5, 0))
         if hasattr(self.app, 'oc_curve_button'):
             self.app.oc_curve_button.pack(pady=(5, 0))
+        if hasattr(self.app, 'inspection_level_button'):
+            self.app.inspection_level_button.pack(pady=(5, 0))
         
         # 根拠の表示
         self.app.reason_label = tk.Label(

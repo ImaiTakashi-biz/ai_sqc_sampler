@@ -56,6 +56,7 @@ class App(tk.Tk):
 
         # --- ウィジェットの構築 ---
         self._create_widgets()
+        self._bind_shortcuts()
 
     def _center_window(self):
         self.update_idletasks()
@@ -283,3 +284,20 @@ class App(tk.Tk):
         today = datetime.now().strftime('%Y-%m-%d')
         date_entry.delete(0, 'end')
         date_entry.insert(0, today)
+    
+    def _bind_shortcuts(self):
+        """ショートカットキーの設定"""
+        def trigger_calculation(event=None):
+            self.controller.start_calculation_thread()
+            return "break"
+        
+        def trigger_export(event=None):
+            try:
+                self.controller.export_results()
+            except Exception:
+                pass
+            return "break"
+        
+        self.bind_all('<Control-Return>', trigger_calculation)
+        self.bind_all('<Control-KP_Enter>', trigger_calculation)
+        self.bind_all('<Control-e>', trigger_export)
