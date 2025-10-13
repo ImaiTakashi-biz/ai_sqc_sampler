@@ -1,4 +1,4 @@
-"""
+﻿"""
 統計計算エンジンモジュール
 SQC統計計算とデータ処理を管理
 AQL/LTPD設計に基づく抜取検査計算
@@ -10,6 +10,45 @@ from functools import lru_cache
 from constants import InspectionConstants, DEFECT_COLUMNS
 
 SAMPLE_SIZE_CACHE_LIMIT = 128
+
+INSPECTION_COMMENT_PRESETS = {
+    "tightened": {
+        "label": "\u5f37\u5316",
+        "aql": 0.10,
+        "ltpd": 0.50,
+        "alpha": 3.0,
+        "beta": 5.0,
+        "c_value": 0,
+        "description": "\u521d\u671f\u6d41\u52d5\u30fb\u4e0d\u5177\u5408\u518d\u767a\u6642"
+    },
+    "standard": {
+        "label": "\u6a19\u6e96",
+        "aql": 0.25,
+        "ltpd": 1.00,
+        "alpha": 5.0,
+        "beta": 10.0,
+        "c_value": 0,
+        "description": "\u901a\u5e38\u30ed\u30c3\u30c8"
+    },
+    "reduced": {
+        "label": "\u7de9\u548c",
+        "aql": 0.40,
+        "ltpd": 1.50,
+        "alpha": 10.0,
+        "beta": 15.0,
+        "c_value": 0,
+        "description": "\u5b89\u5b9a\u751f\u7523\u30fb\u9867\u5ba2\u4fe1\u983c\u88fd\u54c1"
+    }
+}
+
+INSPECTION_COMMENT_BY_LABEL = {
+    preset["label"]: preset for preset in INSPECTION_COMMENT_PRESETS.values()
+}
+
+
+INSPECTION_COMMENT_BY_LABEL = {
+    preset["label"]: preset for preset in INSPECTION_COMMENT_PRESETS.values()
+}
 _DEFECT_SUM_SQL = ", ".join(
     f"SUM(IIF([{col}] IS NOT NULL AND [{col}]<>0, [{col}], 0))" for col in DEFECT_COLUMNS
 )
@@ -114,24 +153,96 @@ class CalculationEngine:
             aql, ltpd, db_data['defect_rate'], db_data['total_qty']
         )
         
-        # 検査水準の簡素化（AQL/LTPD設計ベース）
-        if aql <= 0.1:
-            level_text = "厳格検査"
-            level_reason = f"AQL={aql}%に基づく厳格な統計的設計"
-        elif aql <= 0.65:
-            level_text = "標準検査"
-            level_reason = f"AQL={aql}%に基づく標準的な統計的設計"
+        mode_key = inputs.get('inspection_mode_key') or inputs.get('inspection_mode')
+        mode_details = inputs.get('inspection_mode_details') or {}
+        mode_label = inputs.get('inspection_mode_label') or mode_details.get('label')
+
+        preset_details = None
+        if mode_key and mode_key in INSPECTION_COMMENT_PRESETS:
+            preset_details = INSPECTION_COMMENT_PRESETS[mode_key].copy()
+        elif mode_label and mode_label in INSPECTION_COMMENT_BY_LABEL:
+            preset_details = INSPECTION_COMMENT_BY_LABEL[mode_label].copy()
+        elif mode_details:
+            preset_details = mode_details.copy()
+
+        if preset_details and mode_label and not preset_details.get('label'):
+            preset_details['label'] = mode_label
+
+        active_mode_key = mode_key if mode_key in INSPECTION_COMMENT_PRESETS else None
+
+        if preset_details:
+            label = preset_details.get('label') or mode_label or "標準"
+            level_text = label if label.endswith("検査") else f"{label}検査"
+            level_reason = self._compose_inspection_comment(preset_details)
+            if not active_mode_key and preset_details.get('label'):
+                lookup_label = preset_details['label']
+                for key, preset in INSPECTION_COMMENT_PRESETS.items():
+                    if preset['label'] == lookup_label:
+                        active_mode_key = key
+                        break
         else:
-            level_text = "緩和検査"
-            level_reason = f"AQL={aql}%に基づく緩和された統計的設計"
-        
+            if aql <= 0.1:
+                fallback_key = "tightened"
+            elif aql <= 0.4:
+                fallback_key = "standard"
+            else:
+                fallback_key = "reduced"
+            preset_details = INSPECTION_COMMENT_PRESETS[fallback_key].copy()
+            label = preset_details.get('label', "標準")
+            level_text = label if label.endswith("検査") else f"{label}検査"
+            level_reason = self._compose_inspection_comment(preset_details)
+            active_mode_key = fallback_key
+
         results['level_text'] = level_text
         results['level_reason'] = level_reason
+        results['inspection_mode_label'] = preset_details.get('label', mode_label or "")
+        results['inspection_mode_key'] = active_mode_key
+        results['inspection_mode_details'] = preset_details.copy() if preset_details else {}
         
         # AQL/LTPD設計による抜取数の計算（調整後）
         n_sample, warning_message = self._calculate_aql_ltpd_sample_size(
             adjusted_aql, adjusted_ltpd, alpha, beta, c_value, lot_size
         )
+        if isinstance(warning_message, str) and '全数検査' in warning_message and isinstance(n_sample, int):
+            fallback_ratio = {
+                'tightened': 0.60,
+                'standard': 0.40,
+                'reduced': 0.25
+            }.get(active_mode_key)
+            if fallback_ratio:
+                candidate = math.ceil(lot_size * fallback_ratio)
+                if candidate < lot_size:
+                    n_sample = max(c_value + 1, candidate)
+                    warning_message = None
+
+        if isinstance(n_sample, str):
+            warning_message = warning_message or n_sample
+            n_sample = lot_size
+
+        ratio_baseline = {
+            'tightened': 0.60,
+            'standard': 0.40,
+            'reduced': 0.25
+        }
+        if isinstance(n_sample, int) and active_mode_key in ratio_baseline:
+            minimum = max(1, math.ceil(lot_size * ratio_baseline[active_mode_key]))
+            if minimum > lot_size:
+                minimum = lot_size
+            if n_sample < minimum:
+                n_sample = minimum
+        max_ratio_map = {
+            'tightened': 0.90,
+            'standard': 0.70,
+            'reduced': 0.35
+        }
+        if isinstance(n_sample, int) and active_mode_key in max_ratio_map:
+            maximum = math.ceil(lot_size * max_ratio_map[active_mode_key])
+            if maximum < 1:
+                maximum = 1
+            if maximum < n_sample:
+                n_sample = maximum
+
+
         
         # n>N警告のガイダンス
         guidance_message = self._generate_n_gt_n_guidance(n_sample, lot_size, aql, ltpd, alpha, beta, c_value)
@@ -206,113 +317,62 @@ class CalculationEngine:
         except (ValueError, OverflowError, ZeroDivisionError):
             return "計算エラー", "AQL/LTPDの値が無効です。"
 
+    def _calculate_zero_acceptance_sample_size(self, aql_p, ltpd_p, alpha_p, beta_p):
+        """c=0 の場合の理論値（二項近似）を算出"""
+        if aql_p <= 0 or ltpd_p <= 0:
+            return 0
+
+        # (1 - p)^n >= 1 - alpha -> n >= log(1 - alpha) / log(1 - p)
+        n_aql = 0
+        if alpha_p < 1:
+            n_aql = math.log(1 - alpha_p) / math.log(1 - aql_p)
+        n_ltpd = math.log(beta_p) / math.log(1 - ltpd_p)
+
+        n = max(n_aql, n_ltpd)
+        if not math.isfinite(n) or n <= 0:
+            return 0
+        return math.ceil(n)
+
     def _calculate_small_lot_sample_size(self, aql_p, ltpd_p, alpha_p, beta_p, c_value, lot_size):
         """小ロット（50個以下）の抜取数計算"""
-        # 小ロットでは全数検査または高割合抜取を推奨
         if lot_size <= 10:
-            # 10個以下：全数検査
             return lot_size, f"小ロット（{lot_size}個）のため全数検査を推奨"
-        elif lot_size <= 20:
-            # 11-20個：80%以上抜取
-            n_sample = max(c_value + 1, int(lot_size * 0.8))
-            return n_sample, f"小ロット（{lot_size}個）のため高割合抜取（{n_sample}個、{n_sample/lot_size*100:.1f}%）"
-        else:
-            # 21-50個：60%以上抜取
-            n_sample = max(c_value + 1, int(lot_size * 0.6))
-            return n_sample, f"小ロット（{lot_size}個）のため高割合抜取（{n_sample}個、{n_sample/lot_size*100:.1f}%）"
-    
+
+        n_sample, warning = self._binary_search_sample_size_with_fpc(
+            aql_p, ltpd_p, alpha_p, beta_p, c_value, lot_size
+        )
+        if isinstance(n_sample, str):
+            return lot_size, warning or n_sample
+        if n_sample >= lot_size:
+            return lot_size, f"小ロット（{lot_size}個）のため全数検査を推奨"
+
+        return n_sample, warning
+
     def _calculate_medium_lot_sample_size(self, aql_p, ltpd_p, alpha_p, beta_p, c_value, lot_size):
         """中ロット（51-500個）の抜取数計算（有限母集団補正重視）"""
-        # 有限母集団補正を適用した計算
-        if c_value == 0:
-            # 超幾何分布ベースの計算
-            n_sample = self._calculate_hypergeometric_sample_size(aql_p, ltpd_p, alpha_p, beta_p, lot_size, c_value)
-        else:
-            # c>0の場合は二分探索（有限母集団補正込み）
-            n_sample, warning = self._binary_search_sample_size_with_fpc(aql_p, ltpd_p, alpha_p, beta_p, c_value, lot_size)
-            if warning:
-                return n_sample, warning
-        
-        # ロットサイズとの比較
-        if n_sample > lot_size:
-            return lot_size, f"理論値（{n_sample}個）がロットサイズを超えるため全数検査"
-        
-        return n_sample, None
-    
+        n_sample, warning = self._binary_search_sample_size_with_fpc(
+            aql_p, ltpd_p, alpha_p, beta_p, c_value, lot_size
+        )
+        if isinstance(n_sample, str):
+            return lot_size, warning or n_sample
+        if n_sample >= lot_size:
+            return lot_size, f"算出値（{n_sample}個）がロットサイズを超えるため全数検査"
+
+        return n_sample, warning
+
     def _calculate_large_lot_sample_size(self, aql_p, ltpd_p, alpha_p, beta_p, c_value, lot_size):
         """大ロット（501個以上）の抜取数計算（有限母集団補正適用）"""
-        # 大ロットでも有限母集団補正を適用
-        if c_value == 0:
-            # 超幾何分布ベースの計算（大ロットでも適用）
-            n_sample = self._calculate_hypergeometric_sample_size(aql_p, ltpd_p, alpha_p, beta_p, lot_size, c_value)
-        else:
-            # c>0の場合は二分探索（有限母集団補正込み）
-            n_sample, warning = self._binary_search_sample_size_with_fpc(aql_p, ltpd_p, alpha_p, beta_p, c_value, lot_size)
-            if warning:
-                return n_sample, warning
-        
-        # ロットサイズとの比較
-        if n_sample > lot_size:
-            return lot_size, f"理論値（{n_sample}個）がロットサイズを超えるため全数検査"
-        
-        return n_sample, None
-    
-    def _calculate_hypergeometric_sample_size(self, aql_p, ltpd_p, alpha_p, beta_p, lot_size, c_value=0):
-        """超幾何分布ベースの抜取数計算（有限母集団補正版）"""
-        # 二項分布近似で初期値を計算
-        n_approx = math.ceil(math.log(beta_p) / math.log(1 - ltpd_p))
-        
-        # ロットサイズに基づく有限母集団補正
-        if lot_size <= 100:
-            # 小ロット：高割合抜取
-            n_sample = min(lot_size, int(lot_size * 0.8))
-        elif lot_size <= 500:
-            # 中ロット：強い有限母集団補正
-            fpc_factor = 1.0 - (n_approx / lot_size)
-            n_sample = int(n_approx * fpc_factor)
-        else:
-            # 大ロット：軽微な有限母集団補正
-            fpc_factor = 1.0 - (n_approx / lot_size) * 0.5
-            n_sample = int(n_approx * fpc_factor)
-        
-        # 最小値と最大値の制限
-        n_sample = max(c_value + 1, min(n_sample, lot_size))
-        
-        return n_sample
-    
-    def _binary_search_sample_size_with_fpc(self, aql_p, ltpd_p, alpha_p, beta_p, c_value, lot_size):
-        """有限母集団補正込みの二分探索"""
-        low, high = 1, lot_size
-        best_n = None
-        
-        while low <= high:
-            mid = (low + high) // 2
-            
-            # 有限母集団補正の適用判定
-            use_fpc = (mid / lot_size > 0.05) or (mid > 50)
-            
-            if use_fpc:
-                # 超幾何分布を使用
-                prob_aql = self._hypergeometric_probability(mid, int(lot_size * aql_p), lot_size, c_value)
-                prob_ltpd = self._hypergeometric_probability(mid, int(lot_size * ltpd_p), lot_size, c_value)
-            else:
-                # 二項分布を使用
-                prob_aql = self._binomial_probability(mid, aql_p, c_value)
-                prob_ltpd = self._binomial_probability(mid, ltpd_p, c_value)
-            
-            # 条件チェック
-            if prob_aql >= (1 - alpha_p) and prob_ltpd <= beta_p:
-                best_n = mid
-                high = mid - 1
-            else:
-                low = mid + 1
-        
-        if best_n is None:
-            return lot_size, "条件を満たす抜取数が見つかりません。全数検査を推奨します。"
-        
-        return best_n, None
+        n_sample, warning = self._binary_search_sample_size_with_fpc(
+            aql_p, ltpd_p, alpha_p, beta_p, c_value, lot_size
+        )
+        if isinstance(n_sample, str):
+            return lot_size, warning or n_sample
+        if n_sample >= lot_size:
+            return lot_size, f"算出値（{n_sample}個）がロットサイズを超えるため全数検査"
 
-    def _binary_search_sample_size(self, aql_p, ltpd_p, alpha_p, beta_p, c_value, lot_size):
+        return n_sample, warning
+
+    def _binary_search_sample_size_with_fpc(self, aql_p, ltpd_p, alpha_p, beta_p, c_value, lot_size):
         """二分探索による抜取数の計算（c>0の場合）"""
         low, high = 1, min(lot_size, 10000)  # 実用的な上限を設定
         best_n = None
@@ -325,9 +385,11 @@ class CalculationEngine:
             use_hypergeometric = (mid / lot_size > 0.05) or (mid > 50)
             
             if use_hypergeometric:
-                # 超幾何分布での確率計算
-                paql = self._hypergeometric_probability(mid, c_value, lot_size, int(lot_size * aql_p))
-                pltpd = self._hypergeometric_probability(mid, c_value, lot_size, int(lot_size * ltpd_p))
+                # 超幾何分布での確率計算（期待不良数が0にならないよう調整）
+                defect_count_aql = max(1, round(lot_size * aql_p))
+                defect_count_ltpd = max(1, round(lot_size * ltpd_p))
+                paql = self._hypergeometric_probability(mid, c_value, lot_size, defect_count_aql)
+                pltpd = self._hypergeometric_probability(mid, c_value, lot_size, defect_count_ltpd)
             else:
                 # 二項分布での確率計算
                 paql = _cached_binom_cdf(c_value, mid, aql_p)
@@ -342,10 +404,12 @@ class CalculationEngine:
                 low = mid + 1
         
         if best_n is None:
-            return f"全数検査必要（計算断念）", \
-                   f"c={c_value}、AQL={aql_p*100:.2f}%、LTPD={ltpd_p*100:.2f}%の条件では、ロットサイズ（{lot_size:,}個）を超える抜取が必要です。"
-        else:
-            return best_n, None
+            if c_value == 0:
+                approx = self._calculate_zero_acceptance_sample_size(aql_p, ltpd_p, alpha_p, beta_p)
+                if approx and approx < lot_size:
+                    return max(c_value + 1, approx), None
+            return lot_size, f"c={c_value}、AQL={aql_p*100:.2f}%、LTPD={ltpd_p*100:.2f}%の条件では全数検査を推奨します。"
+        return best_n, None
     
     def _hypergeometric_probability(self, n, D, N, c):
         """超幾何分布による確率計算"""
@@ -384,6 +448,43 @@ class CalculationEngine:
             })
         
         return oc_data
+    
+    @staticmethod
+    def _compose_inspection_comment(details):
+        """検査水準コメント文字列を生成"""
+
+        def fmt(value, percent=True):
+            if value is None:
+                return "-"
+            try:
+                numeric = float(value)
+            except (TypeError, ValueError):
+                return str(value)
+
+            if percent:
+                formatted = f"{numeric:.2f}".rstrip('0').rstrip('.')
+                return formatted or "0"
+
+            if numeric.is_integer():
+                return str(int(numeric))
+            return f"{numeric:.2f}".rstrip('0').rstrip('.') or "0"
+
+        aql_str = fmt(details.get('aql'))
+        ltpd_str = fmt(details.get('ltpd'))
+        alpha_str = fmt(details.get('alpha'))
+        beta_str = fmt(details.get('beta'))
+        c_value_str = fmt(details.get('c_value'), percent=False)
+
+        comment = (
+            f"\u6761\u4ef6: AQL={aql_str}%, LTPD={ltpd_str}%, "
+            f"\u03b1={alpha_str}%, \u03b2={beta_str}%, c={c_value_str}"
+        )
+
+        description = details.get('description')
+        if description:
+            comment += f" | \u7528\u9014: {description}"
+
+        return comment
     
     def _binomial_probability(self, n, p, c):
         """二項分布による合格確率の計算"""
@@ -533,48 +634,34 @@ class CalculationEngine:
     
     def _adjust_aql_ltpd_based_on_history(self, original_aql, original_ltpd, historical_defect_rate, total_quantity):
         """データベース実績に基づくAQL/LTPD調整"""
-        # データが不十分な場合は元の値をそのまま使用
         if total_quantity < 100 or historical_defect_rate is None:
             return original_aql, original_ltpd
-        
-        # 実績不良率に基づく調整ロジック
-        adjusted_aql = original_aql
-        adjusted_ltpd = original_ltpd
-        
-        # 実績不良率が非常に低い場合（0.1%未満）
-        if historical_defect_rate < 0.1:
-            # AQLをより厳しく設定（品質が良いため）
-            adjusted_aql = max(0.1, original_aql * 0.5)
-            adjusted_ltpd = max(0.5, original_ltpd * 0.7)
-            
-        # 実績不良率が低い場合（0.1%～0.5%）
-        elif historical_defect_rate < 0.5:
-            # AQLをやや厳しく設定
-            adjusted_aql = max(0.15, original_aql * 0.7)
-            adjusted_ltpd = max(0.7, original_ltpd * 0.8)
-            
-        # 実績不良率が高い場合（1.0%以上）
-        elif historical_defect_rate > 1.0:
-            # AQLを緩く設定（品質に課題があるため）
-            adjusted_aql = min(2.0, original_aql * 1.5)
-            adjusted_ltpd = min(5.0, original_ltpd * 1.3)
-            
-        # 実績不良率が非常に高い場合（2.0%以上）
-        elif historical_defect_rate > 2.0:
-            # AQLをさらに緩く設定
-            adjusted_aql = min(3.0, original_aql * 2.0)
-            adjusted_ltpd = min(8.0, original_ltpd * 1.5)
-        
-        # データ量に基づく信頼度調整
-        confidence_factor = min(1.0, total_quantity / 1000.0)  # 1000個以上で最大信頼度
-        
-        # 信頼度が低い場合は調整を控えめに
-        if confidence_factor < 0.5:
-            adjusted_aql = original_aql + (adjusted_aql - original_aql) * confidence_factor
-            adjusted_ltpd = original_ltpd + (adjusted_ltpd - original_ltpd) * confidence_factor
-        
+
+        rate = historical_defect_rate
+
+        if rate <= 0.1:
+            adjustment_factor = 1.10
+        elif rate <= 0.5:
+            adjustment_factor = 1.05
+        elif rate <= 1.5:
+            adjustment_factor = 1.0
+        elif rate <= 2.5:
+            adjustment_factor = 0.9
+        else:
+            adjustment_factor = 0.8
+
+        target_aql = original_aql * adjustment_factor
+        target_ltpd = original_ltpd * adjustment_factor
+
+        confidence_factor = max(0.0, min(1.0, total_quantity / 1500.0))
+        adjusted_aql = original_aql + (target_aql - original_aql) * confidence_factor
+        adjusted_ltpd = original_ltpd + (target_ltpd - original_ltpd) * confidence_factor
+
+        adjusted_aql = max(0.02, min(5.0, adjusted_aql))
+        adjusted_ltpd = max(0.2, min(10.0, adjusted_ltpd))
+
         return round(adjusted_aql, 3), round(adjusted_ltpd, 3)
-    
+
     def _generate_adjustment_info(self, original_aql, original_ltpd, adjusted_aql, adjusted_ltpd, historical_defect_rate):
         """調整情報の生成"""
         if original_aql == adjusted_aql and original_ltpd == adjusted_ltpd:
@@ -597,3 +684,4 @@ class CalculationEngine:
             info += "効果: 統計的精度の向上\n"
         
         return info
+

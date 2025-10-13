@@ -13,6 +13,10 @@ class App(tk.Tk):
         self.result_var = tk.StringVar()
         self.review_var = tk.StringVar()
         self.best3_var = tk.StringVar()
+        self.inspection_mode_var = tk.StringVar()
+        self.inspection_mode_label_to_key = {}
+        self.inspection_mode_key_to_label = {}
+        self.current_inspection_mode_key = "standard"
         
         # --- カラーパレット ---
         self.PRIMARY_BLUE = "#3498db"
@@ -95,6 +99,68 @@ class App(tk.Tk):
         help_menu.add_command(label="アプリケーション情報", command=self.controller.show_about)
 
     def _create_widgets(self):
+        config_defaults = {
+            'aql': 0.25,
+            'ltpd': 1.0,
+            'alpha': 5.0,
+            'beta': 10.0,
+            'c_value': 0,
+        }
+        mode_label = "標準"
+        mode_details = {
+            'aql': config_defaults['aql'],
+            'ltpd': config_defaults['ltpd'],
+            'alpha': config_defaults['alpha'],
+            'beta': config_defaults['beta'],
+            'c_value': config_defaults['c_value'],
+            'description': "通常ロット"
+        }
+        config_manager = getattr(self.controller, "config_manager", None)
+        if config_manager:
+            defaults_source = getattr(config_manager, "DEFAULT_CONFIG", {})
+            config_defaults['aql'] = config_manager.get("default_aql", defaults_source.get("default_aql", 0.25))
+            config_defaults['ltpd'] = config_manager.get("default_ltpd", defaults_source.get("default_ltpd", 1.0))
+            config_defaults['alpha'] = config_manager.get("default_alpha", defaults_source.get("default_alpha", 5.0))
+            config_defaults['beta'] = config_manager.get("default_beta", defaults_source.get("default_beta", 10.0))
+            config_defaults['c_value'] = config_manager.get("default_c_value", defaults_source.get("default_c_value", 0))
+
+            if hasattr(config_manager, "get_inspection_mode_choices"):
+                mode_choices = config_manager.get_inspection_mode_choices()
+                self.inspection_mode_key_to_label = mode_choices
+                self.inspection_mode_label_to_key = {label: key for key, label in mode_choices.items()}
+                current_mode_key = config_manager.get_inspection_mode()
+                self.current_inspection_mode_key = current_mode_key
+                mode_label = mode_choices.get(current_mode_key, mode_label)
+                if hasattr(config_manager, "get_inspection_mode_details"):
+                    mode_details = config_manager.get_inspection_mode_details(current_mode_key)
+            else:
+                self.inspection_mode_key_to_label = {}
+                self.inspection_mode_label_to_key = {}
+        else:
+            self.inspection_mode_key_to_label = {}
+            self.inspection_mode_label_to_key = {}
+
+        if not self.inspection_mode_label_to_key:
+            fallback_modes = {
+                "tightened": "強化",
+                "standard": "標準",
+                "reduced": "緩和"
+            }
+            self.inspection_mode_key_to_label = fallback_modes
+            self.inspection_mode_label_to_key = {label: key for key, label in fallback_modes.items()}
+            self.current_inspection_mode_key = "standard"
+            mode_label = fallback_modes["standard"]
+            mode_details = {
+                'aql': 0.25,
+                'ltpd': 1.0,
+                'alpha': 5.0,
+                'beta': 10.0,
+                'c_value': 0,
+                'description': "通常ロット"
+            }
+
+        self.inspection_mode_var.set(mode_label)
+
         canvas_frame = tk.Frame(self)
         canvas_frame.pack(fill="both", expand=True)
         yscroll = tk.Scrollbar(canvas_frame, orient='vertical')
@@ -171,37 +237,66 @@ class App(tk.Tk):
         self.sample_qty_entry = tk.Entry(row1_frame, width=12, font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg="#ffffff", fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
         self.sample_qty_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
 
+        mode_frame = tk.Frame(input_frame, bg=self.LIGHT_GRAY)
+        mode_frame.pack(fill='x', pady=self.PADDING_Y_SMALL)
+        tk.Label(mode_frame, text="検査区分:", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left', padx=(0, self.PADDING_Y_SMALL))
+
+        mode_values = list(self.inspection_mode_label_to_key.keys())
+        self.inspection_mode_selector = ttk.Combobox(
+            mode_frame,
+            state='readonly',
+            values=mode_values,
+            textvariable=self.inspection_mode_var,
+            width=8,
+            font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM)
+        )
+        self.inspection_mode_selector.pack(side='left', padx=self.PADDING_Y_SMALL)
+        self.inspection_mode_selector.bind("<<ComboboxSelected>>", self._handle_inspection_mode_change)
+        self.inspection_mode_selector.set(self.inspection_mode_var.get())
+
+        self.inspection_mode_info_label = tk.Label(
+            input_frame,
+            text=self._format_inspection_mode_summary(mode_details),
+            font=(self.FONT_FAMILY, self.FONT_SIZE_SMALL),
+            fg=self.DARK_GRAY,
+            bg=self.LIGHT_GRAY,
+            anchor='w',
+            justify='left',
+            wraplength=self.WRAPLENGTH_DEFAULT
+        )
+        self.inspection_mode_info_label.pack(fill='x', pady=(0, self.PADDING_Y_SMALL))
+
         # AQL/LTPD設計の入力項目
         row2_frame = tk.Frame(input_frame, bg=self.LIGHT_GRAY)
         row2_frame.pack(fill='x', pady=self.PADDING_Y_SMALL)
         tk.Label(row2_frame, text="AQL(%):", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left', padx=(0, self.PADDING_Y_SMALL))
         self.sample_aql_entry = tk.Entry(row2_frame, width=6, font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg="#ffffff", fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
         self.sample_aql_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
-        self.sample_aql_entry.insert(0, "0.25")
+        self.sample_aql_entry.insert(0, str(config_defaults['aql']))
         
         tk.Label(row2_frame, text="LTPD(%):", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left', padx=(self.PADDING_Y_MEDIUM, self.PADDING_Y_SMALL))
         self.sample_ltpd_entry = tk.Entry(row2_frame, width=6, font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg="#ffffff", fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
         self.sample_ltpd_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
-        self.sample_ltpd_entry.insert(0, "1.0")
+        self.sample_ltpd_entry.insert(0, str(config_defaults['ltpd']))
 
         row3_frame = tk.Frame(input_frame, bg=self.LIGHT_GRAY)
         row3_frame.pack(fill='x', pady=self.PADDING_Y_SMALL)
         tk.Label(row3_frame, text="α(生産者危険,%):", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left', padx=(0, self.PADDING_Y_SMALL))
         self.sample_alpha_entry = tk.Entry(row3_frame, width=6, font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg="#ffffff", fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
         self.sample_alpha_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
-        self.sample_alpha_entry.insert(0, "5.0")
+        self.sample_alpha_entry.insert(0, str(config_defaults['alpha']))
         
         tk.Label(row3_frame, text="β(消費者危険,%):", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left', padx=(self.PADDING_Y_MEDIUM, self.PADDING_Y_SMALL))
         self.sample_beta_entry = tk.Entry(row3_frame, width=6, font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg="#ffffff", fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
         self.sample_beta_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
-        self.sample_beta_entry.insert(0, "10.0")
+        self.sample_beta_entry.insert(0, str(config_defaults['beta']))
 
         row4_frame = tk.Frame(input_frame, bg=self.LIGHT_GRAY)
         row4_frame.pack(fill='x', pady=self.PADDING_Y_SMALL)
         tk.Label(row4_frame, text="c値(許容不良数):", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left', padx=(0, self.PADDING_Y_SMALL))
         self.sample_c_entry = tk.Entry(row4_frame, width=6, font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg="#ffffff", fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
         self.sample_c_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
-        self.sample_c_entry.insert(0, "0")
+        self.sample_c_entry.insert(0, str(config_defaults['c_value']))
 
         tk.Label(input_frame, text="※ AQL: これ以下なら合格とみなす不良率（例: 0.25%）\n※ LTPD: これ以上なら不合格にしたい不良率（例: 1.0%）\n※ α: 良いロットを誤って不合格にする確率（例: 5%）\n※ β: 悪いロットを誤って合格にする確率（例: 10%）\n※ c値: 抜取検査で許容できる不良品の最大数（例: c=0なら不良品が1つでも見つかれば不合格）", fg=self.DARK_GRAY, bg=self.LIGHT_GRAY, font=(self.FONT_FAMILY, self.FONT_SIZE_SMALL), wraplength=self.WRAPLENGTH_DEFAULT, justify='left').pack(pady=(self.PADDING_Y_SMALL, 0))  # 下部パディング削除
 
@@ -272,6 +367,92 @@ class App(tk.Tk):
         self.best3_frame.pack(fill='x', padx=self.PADDING_X_MEDIUM, pady=self.PADDING_Y_SMALL)  # パディング削減
         self.best3_frame.pack_forget()
         tk.Label(self.best3_frame, textvariable=self.best3_var, font=(self.FONT_FAMILY, self.FONT_SIZE_SMALL, "bold"), fg="#ffffff", bg=self.WARNING_RED, padx=self.PADDING_X_SMALL, pady=self.PADDING_Y_SMALL, wraplength=self.WRAPLENGTH_DEFAULT, justify='left').pack(fill='x')
+
+    def _handle_inspection_mode_change(self, event=None):
+        """検査区分の変更イベント"""
+        selected_label = self.inspection_mode_var.get()
+        mode_key = self.inspection_mode_label_to_key.get(selected_label)
+        if not mode_key:
+            return
+        self.current_inspection_mode_key = mode_key
+        if hasattr(self.controller, "on_inspection_mode_change"):
+            self.controller.on_inspection_mode_change(mode_key)
+
+    def apply_inspection_mode_preset(self, preset, mode_label=None):
+        """検査区分プリセットを入力欄へ反映"""
+        if mode_label:
+            self.inspection_mode_var.set(mode_label)
+            if mode_label in self.inspection_mode_label_to_key:
+                self.current_inspection_mode_key = self.inspection_mode_label_to_key[mode_label]
+        elif preset and preset.get('label'):
+            inferred_label = preset.get('label')
+            self.inspection_mode_var.set(inferred_label)
+            if inferred_label in self.inspection_mode_label_to_key:
+                self.current_inspection_mode_key = self.inspection_mode_label_to_key[inferred_label]
+        if not preset:
+            return
+
+        self._set_entry_value(self.sample_aql_entry, preset.get("aql"))
+        self._set_entry_value(self.sample_ltpd_entry, preset.get("ltpd"))
+        self._set_entry_value(self.sample_alpha_entry, preset.get("alpha"))
+        self._set_entry_value(self.sample_beta_entry, preset.get("beta"))
+        self._set_entry_value(self.sample_c_entry, preset.get("c_value"))
+        self._update_inspection_mode_info(preset)
+        if hasattr(self, 'inspection_mode_selector'):
+            self.inspection_mode_selector.set(self.inspection_mode_var.get())
+
+    def refresh_inspection_mode_choices(self, label_to_key_map, current_key):
+        """検査区分の選択肢を更新"""
+        if not label_to_key_map:
+            return
+
+        self.inspection_mode_label_to_key = label_to_key_map
+        self.inspection_mode_key_to_label = {key: label for label, key in label_to_key_map.items()}
+        values = list(self.inspection_mode_label_to_key.keys())
+        if hasattr(self, 'inspection_mode_selector'):
+            self.inspection_mode_selector['values'] = values
+
+        label = self.inspection_mode_key_to_label.get(current_key) if hasattr(self, 'inspection_mode_key_to_label') else None
+        if label is None and values:
+            label = values[0]
+            current_key = self.inspection_mode_label_to_key[label]
+        if label:
+            self.current_inspection_mode_key = current_key
+            self.inspection_mode_var.set(label)
+            if hasattr(self, 'inspection_mode_selector'):
+                self.inspection_mode_selector.set(label)
+
+    def _format_inspection_mode_summary(self, details):
+        """検査区分のサマリー文字列を生成"""
+        if not details:
+            return ''
+        aql = self._format_numeric(details.get('aql'))
+        ltpd = self._format_numeric(details.get('ltpd'))
+        alpha = self._format_numeric(details.get('alpha'))
+        beta = self._format_numeric(details.get('beta'))
+        c_value = self._format_numeric(details.get('c_value'))
+        description = details.get('description', '')
+        return f"AQL {aql}% | LTPD {ltpd}% | α {alpha}% | β {beta}% | c {c_value} | 用途: {description}"
+
+    def _update_inspection_mode_info(self, details):
+        """検査区分の説明ラベルを更新"""
+        if hasattr(self, 'inspection_mode_info_label'):
+            self.inspection_mode_info_label.config(text=self._format_inspection_mode_summary(details))
+
+    def _set_entry_value(self, entry_widget, value):
+        """エントリーへ値を反映"""
+        if entry_widget is None:
+            return
+        entry_widget.delete(0, 'end')
+        entry_widget.insert(0, self._format_numeric(value))
+
+    @staticmethod
+    def _format_numeric(value):
+        """数値を表示用に整形"""
+        if isinstance(value, float):
+            formatted = f"{value:.2f}".rstrip('0').rstrip('.')
+            return formatted or '0'
+        return str(value) if value is not None else ''
 
     def show_export_button(self):
         self.export_frame.pack(pady=self.PADDING_Y_SMALL)  # パディング削減

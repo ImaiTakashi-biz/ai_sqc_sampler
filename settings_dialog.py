@@ -4,7 +4,7 @@
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from tkinter import messagebox, filedialog
 import os
 from security_manager import SecurityManager
 
@@ -18,8 +18,7 @@ class SettingsDialog:
         self.security_manager = getattr(config_manager, "security_manager", SecurityManager())
         self.dialog = None
         self.db_path_var = None
-        self.confidence_var = None
-        self.c_value_var = None
+        self.default_vars = {}
         
     def show(self):
         """設定ダイアログの表示"""
@@ -147,61 +146,44 @@ class SettingsDialog:
         )
         default_frame.pack(fill='x', pady=(0, 15))
         
-        # 信頼度
-        conf_frame = tk.Frame(default_frame, bg="#f0f0f0")
-        conf_frame.pack(fill='x', pady=(0, 5))
+        defaults_source = getattr(self.config_manager, "DEFAULT_CONFIG", {})
+        default_fields = [
+            ("default_aql", "デフォルトAQL(%)", float, 0.25),
+            ("default_ltpd", "デフォルトLTPD(%)", float, 1.0),
+            ("default_alpha", "デフォルトα(%)（生産者危険）", float, 5.0),
+            ("default_beta", "デフォルトβ(%)（消費者危険）", float, 10.0),
+            ("default_c_value", "デフォルトc値", int, 0),
+        ]
         
-        tk.Label(
-            conf_frame, 
-            text="デフォルト信頼度(%):", 
-            font=("Meiryo", 10), 
-            fg="#2c3e50", 
-            bg="#f0f0f0"
-        ).pack(side='left')
-        
-        self.confidence_var = tk.StringVar(value=str(self.config_manager.get("default_confidence", 99.0)))
-        conf_entry = tk.Entry(
-            conf_frame, 
-            textvariable=self.confidence_var, 
-            width=10, 
-            font=("Meiryo", 10), 
-            bg="#ffffff", 
-            fg="#2c3e50", 
-            relief="flat", 
-            bd=1, 
-            highlightthickness=1, 
-            highlightbackground="#bdc3c7", 
-            highlightcolor="#3498db"
-        )
-        conf_entry.pack(side='right')
-        
-        # c値
-        c_frame = tk.Frame(default_frame, bg="#f0f0f0")
-        c_frame.pack(fill='x', pady=(0, 5))
-        
-        tk.Label(
-            c_frame, 
-            text="デフォルトc値:", 
-            font=("Meiryo", 10), 
-            fg="#2c3e50", 
-            bg="#f0f0f0"
-        ).pack(side='left')
-        
-        self.c_value_var = tk.StringVar(value=str(self.config_manager.get("default_c_value", 0)))
-        c_entry = tk.Entry(
-            c_frame, 
-            textvariable=self.c_value_var, 
-            width=10, 
-            font=("Meiryo", 10), 
-            bg="#ffffff", 
-            fg="#2c3e50", 
-            relief="flat", 
-            bd=1, 
-            highlightthickness=1, 
-            highlightbackground="#bdc3c7", 
-            highlightcolor="#3498db"
-        )
-        c_entry.pack(side='right')
+        for key, label, caster, fallback in default_fields:
+            row = tk.Frame(default_frame, bg="#f0f0f0")
+            row.pack(fill='x', pady=(0, 5))
+            
+            tk.Label(
+                row, 
+                text=label, 
+                font=("Meiryo", 10), 
+                fg="#2c3e50", 
+                bg="#f0f0f0"
+            ).pack(side='left')
+            
+            current_value = self.config_manager.get(key, defaults_source.get(key, fallback))
+            var = tk.StringVar(value=str(current_value))
+            entry = tk.Entry(
+                row, 
+                textvariable=var, 
+                width=10, 
+                font=("Meiryo", 10), 
+                bg="#ffffff", 
+                fg="#2c3e50", 
+                relief="flat", 
+                bd=1, 
+                highlightthickness=1, 
+                highlightbackground="#bdc3c7", 
+                highlightcolor="#3498db"
+            )
+            entry.pack(side='right')
+            self.default_vars[key] = (var, caster, label)
         
         # ボタンフレーム
         button_frame = tk.Frame(main_frame, bg="#f0f0f0")
@@ -328,29 +310,46 @@ class SettingsDialog:
         if messagebox.askyesno("確認", "設定をデフォルト値に戻しますか？"):
             self.config_manager.reset_to_defaults()
             self.db_path_var.set(self.config_manager.get_database_path())
-            self.confidence_var.set(str(self.config_manager.get("default_confidence", 99.0)))
-            self.c_value_var.set(str(self.config_manager.get("default_c_value", 0)))
+            defaults_source = getattr(self.config_manager, "DEFAULT_CONFIG", {})
+            for key, (var, _, _) in self.default_vars.items():
+                var.set(str(self.config_manager.get(key, defaults_source.get(key))))
             messagebox.showinfo("完了", "設定をデフォルト値に戻しました。")
     
     def _ok(self):
         """OKボタンの処理"""
         try:
             # 入力値の検証
-            confidence = float(self.confidence_var.get())
-            c_value = int(self.c_value_var.get())
-            
-            if not 0 < confidence <= 100:
-                messagebox.showerror("エラー", "信頼度は0より大きく100以下の数値で入力してください。")
+            if not self.config_manager.set_database_path(self.db_path_var.get()):
                 return
-            
-            if c_value < 0:
-                messagebox.showerror("エラー", "c値は0以上の整数で入力してください。")
-                return
+
+            validated_values = {}
+            for key, (var, caster, label) in self.default_vars.items():
+                raw_value = var.get().strip()
+                if not raw_value:
+                    messagebox.showerror("エラー", f"{label} を入力してください。")
+                    return
+                
+                try:
+                    value = caster(raw_value)
+                except ValueError:
+                    messagebox.showerror("エラー", f"{label} には数値を入力してください。")
+                    return
+                if caster is int and value < 0:
+                    messagebox.showerror("エラー", "c値は0以上の整数で入力してください。")
+                    return
+                if caster is float:
+                    if key in ("default_alpha", "default_beta") and not (0 <= value <= 100):
+                        messagebox.showerror("エラー", "αとβは0以上100以下の数値で入力してください。")
+                        return
+                    if value < 0:
+                        messagebox.showerror("エラー", f"{label} は0以上の数値で入力してください。")
+                        return
+                
+                validated_values[key] = value
             
             # 設定の保存
-            self.config_manager.set_database_path(self.db_path_var.get())
-            self.config_manager.set("default_confidence", confidence)
-            self.config_manager.set("default_c_value", c_value)
+            for key, value in validated_values.items():
+                self.config_manager.set(key, value)
             
             messagebox.showinfo("完了", "設定を保存しました。")
             self.dialog.destroy()

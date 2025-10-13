@@ -47,22 +47,19 @@ class DatabaseManager:
             return conn
             
         except pyodbc.Error as e:
-            sanitized_error = self.security_manager.sanitize_error_message(str(e))
+            raw_message = str(e)
+            sanitized_error = self.security_manager.sanitize_error_message(raw_message)
             self.security_manager.log_security_event("DB_CONNECTION_ERROR", f"DB接続エラー: {sanitized_error}")
-            if "Microsoft Access Driver" in str(e):
+            if "Microsoft Access Driver" in raw_message:
                 messagebox.showerror("ドライバーエラー", 
                     "Microsoft Access Driverが見つかりません。\n"
                     "Microsoft Access Database Engine 2016 Redistributableをインストールしてください。")
             else:
-                # エラーメッセージをサニタイズ
-                sanitized_error = self.security_manager.sanitize_error_message(str(e))
                 messagebox.showerror("データベースエラー", f"データベース接続に失敗しました:\n{sanitized_error}")
             return None
         except Exception as e:
             sanitized_error = self.security_manager.sanitize_error_message(str(e))
             self.security_manager.log_security_event("UNEXPECTED_ERROR", f"予期しないエラー: {sanitized_error}")
-            # エラーメッセージをサニタイズ
-            sanitized_error = self.security_manager.sanitize_error_message(str(e))
             messagebox.showerror("エラー", f"予期しないエラーが発生しました:\n{sanitized_error}")
             return None
     

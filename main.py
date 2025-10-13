@@ -31,6 +31,7 @@ class MainController:
     def __init__(self):
         # 基本コンポーネントの初期化
         self.config_manager = ConfigManager()
+        self.security_manager = SecurityManager()
         self.db_manager = DatabaseManager(self.config_manager)
         self.app = App(self)
         
@@ -62,6 +63,8 @@ class MainController:
 
     def _get_user_inputs(self):
         """ユーザー入力の取得と検証（AQL/LTPD設計対応）"""
+        if hasattr(self.app, 'reset_input_highlights'):
+            self.app.reset_input_highlights()
         inputs = {
             'product_number': self.app.sample_pn_entry.get().strip(),
             'lot_size_str': self.app.sample_qty_entry.get().strip(),
@@ -73,6 +76,24 @@ class MainController:
             'beta_str': self.app.sample_beta_entry.get().strip() or "10.0",
             'c_str': self.app.sample_c_entry.get().strip() or "0"
         }
+
+        mode_label = None
+        mode_key = getattr(self.app, "current_inspection_mode_key", None)
+        if hasattr(self.app, "inspection_mode_var"):
+            try:
+                mode_label = self.app.inspection_mode_var.get()
+            except tk.TclError:
+                mode_label = None
+
+        if mode_label:
+            inputs['inspection_mode_label'] = mode_label
+        if mode_key:
+            inputs['inspection_mode_key'] = mode_key
+            if hasattr(self.config_manager, "get_inspection_mode_details"):
+                try:
+                    inputs['inspection_mode_details'] = self.config_manager.get_inspection_mode_details(mode_key)
+                except Exception:
+                    pass
         
         # 入力値の検証
         validator = InputValidator()
@@ -90,10 +111,44 @@ class MainController:
         
         if not is_valid:
             error_message = "以下の入力エラーがあります：\n" + "\n".join(f"• {error}" for error in errors)
+            self._highlight_invalid_inputs(errors)
             messagebox.showwarning("入力エラー", error_message)
             return None
-        
+
+        if mode_label:
+            validated_data['inspection_mode_label'] = mode_label
+        if mode_key:
+            validated_data['inspection_mode_key'] = mode_key
+        if inputs.get('inspection_mode_details'):
+            validated_data['inspection_mode_details'] = inputs['inspection_mode_details']
+
         return validated_data
+    
+    def _highlight_invalid_inputs(self, errors):
+        """入力エラーに応じて対象フィールドを強調表示"""
+        if not hasattr(self.app, 'mark_entry_error'):
+            return
+        
+        keyword_map = [
+            (("品番",), getattr(self.app, "sample_pn_entry", None)),
+            (("数量", "ロット"), getattr(self.app, "sample_qty_entry", None)),
+            (("AQL",), getattr(self.app, "sample_aql_entry", None)),
+            (("LTPD",), getattr(self.app, "sample_ltpd_entry", None)),
+            (("α", "生産者"), getattr(self.app, "sample_alpha_entry", None)),
+            (("β", "消費者"), getattr(self.app, "sample_beta_entry", None)),
+            (("c値", "許容不良"), getattr(self.app, "sample_c_entry", None)),
+            (("開始日", "開始日付", "開始日時"), getattr(self.app, "sample_start_date_entry", None)),
+            (("終了日", "終了日付", "終了日時"), getattr(self.app, "sample_end_date_entry", None)),
+            (("日付", "期間"), getattr(self.app, "sample_start_date_entry", None))
+        ]
+        
+        for error in errors:
+            for keywords, widget in keyword_map:
+                if widget is None:
+                    continue
+                if any(keyword in error for keyword in keywords):
+                    self.app.mark_entry_error(widget)
+                    break
 
     def show_product_numbers_list(self):
         """品番リストの表示"""
@@ -102,6 +157,13 @@ class MainController:
     def export_results(self):
         """結果のエクスポート"""
         self.export_manager.export_results()
+
+    def on_inspection_mode_change(self, mode_key):
+        """検査区分変更時の処理"""
+        preset = self.config_manager.apply_inspection_mode(mode_key)
+        mode_label = self.config_manager.get_inspection_mode_label(mode_key)
+        if hasattr(self.app, "apply_inspection_mode_preset"):
+            self.app.apply_inspection_mode_preset(preset, mode_label)
 
     def open_config_dialog(self):
         """設定ダイアログの表示"""
@@ -114,6 +176,27 @@ class MainController:
         self.progress_manager = ProgressManager(self.app, self.db_manager, self.calculation_engine, self.ui_manager)
         self.product_list_manager = ProductListManager(self.app, self.db_manager)
 
+        # 検査区分の反映と入力欄の更新
+        if hasattr(self.config_manager, "get_inspection_mode"):
+            current_mode_key = self.config_manager.get_inspection_mode()
+            if hasattr(self.app, "refresh_inspection_mode_choices"):
+                choices = self.config_manager.get_inspection_mode_choices()
+                label_to_key = {label: key for key, label in choices.items()}
+                self.app.refresh_inspection_mode_choices(label_to_key, current_mode_key)
+
+            if hasattr(self.app, "apply_inspection_mode_preset"):
+                defaults_source = getattr(self.config_manager, "DEFAULT_CONFIG", {})
+                preset_values = {
+                    "aql": self.config_manager.get("default_aql", defaults_source.get("default_aql", 0.25)),
+                    "ltpd": self.config_manager.get("default_ltpd", defaults_source.get("default_ltpd", 1.0)),
+                    "alpha": self.config_manager.get("default_alpha", defaults_source.get("default_alpha", 5.0)),
+                    "beta": self.config_manager.get("default_beta", defaults_source.get("default_beta", 10.0)),
+                    "c_value": self.config_manager.get("default_c_value", defaults_source.get("default_c_value", 0)),
+                    "description": self.config_manager.get_inspection_mode_details(current_mode_key).get("description", "")
+                }
+                mode_label = self.config_manager.get_inspection_mode_label(current_mode_key)
+                self.app.apply_inspection_mode_preset(preset_values, mode_label)
+
     def show_help(self):
         """ヘルプの表示（アプリケーション内でREADME内容を表示）"""
         try:
@@ -121,7 +204,7 @@ class MainController:
             readme_path = Path(__file__).resolve().parent / "README.md"
             
             if not readme_path.exists():
-                messagebox.showerror("エラー", f"READMEファイルが見つかりません。\nファイル: {readme_path}")
+                messagebox.showerror("エラー", f"READMEファイルが見つかりません。\nファイル: {readme_path.name}")
                 return
             
             # READMEファイルの内容を読み込み
@@ -133,7 +216,14 @@ class MainController:
                 
         except Exception as e:
             # エラーが発生した場合は代替手段を提供
-            error_msg = f"READMEファイルを読み込めませんでした。\n\nエラー: {str(e)}\n\n代替手段:\n1. ファイルエクスプローラーでREADME.mdファイルを手動で開いてください\n2. テキストエディタでREADME.mdファイルを開いてください"
+            sanitized = self.security_manager.sanitize_error_message(str(e)) if hasattr(self, 'security_manager') else str(e)
+            error_msg = (
+                "READMEファイルを読み込めませんでした。\n\n"
+                f"エラー: {sanitized}\n\n"
+                "代替手段:\n"
+                "1. ファイルエクスプローラーでREADME.mdファイルを手動で開いてください\n"
+                "2. テキストエディタでREADME.mdファイルを開いてください"
+            )
             messagebox.showerror("ヘルプファイルを読み込めません", error_msg)
     
     def _create_help_window(self, content, readme_path):
@@ -142,7 +232,10 @@ class MainController:
         help_window = Toplevel(self.app)
         help_window.title("AI SQC Sampler - ヘルプ")
         help_window.geometry("1000x750")
+        help_window.minsize(720, 480)
         help_window.configure(bg="#f0f0f0")
+        help_window.grid_columnconfigure(0, weight=1)
+        help_window.grid_rowconfigure(1, weight=1)
         
         # ウィンドウを中央に配置
         help_window.transient(self.app)
@@ -150,7 +243,8 @@ class MainController:
         
         # 上部フレーム（検索・ナビゲーション）
         top_frame = tk.Frame(help_window, bg="#f0f0f0")
-        top_frame.pack(fill="x", padx=10, pady=(10, 5))
+        top_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
+        top_frame.grid_columnconfigure(0, weight=1)
         
         # 検索機能
         search_frame = tk.Frame(top_frame, bg="#f0f0f0")
@@ -281,7 +375,7 @@ class MainController:
             relief="flat",
             borderwidth=0
         )
-        text_area.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        text_area.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
         
         # 内容を挿入
         text_area.insert("1.0", content)
@@ -289,7 +383,7 @@ class MainController:
         
         # 下部ボタンフレーム
         button_frame = tk.Frame(help_window, bg="#f0f0f0")
-        button_frame.pack(fill="x", padx=10, pady=(0, 10))
+        button_frame.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 10))
         
         # 外部で開くボタン
         def open_external():
@@ -305,7 +399,8 @@ class MainController:
                 else:
                     webbrowser.open(resolved_path.as_uri())
             except Exception as e:
-                messagebox.showerror("エラー", f"外部アプリケーションで開けませんでした:\n{str(e)}")
+                sanitized = self.security_manager.sanitize_error_message(str(e)) if hasattr(self, 'security_manager') else str(e)
+                messagebox.showerror("エラー", f"外部アプリケーションで開けませんでした:\n{sanitized}")
         
         external_button = tk.Button(
             button_frame,
