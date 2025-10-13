@@ -6,8 +6,10 @@ AI SQC Sampler - メインコントローラー
 from tkinter import messagebox, Toplevel, scrolledtext
 import tkinter as tk
 import os
+import platform
 import subprocess
 import webbrowser
+from pathlib import Path
 from gui import App
 from database import DatabaseManager
 from validation import InputValidator
@@ -116,25 +118,25 @@ class MainController:
         """ヘルプの表示（アプリケーション内でREADME内容を表示）"""
         try:
             # READMEファイルのパスを取得
-            readme_path = os.path.join(os.getcwd(), "README.md")
+            readme_path = Path(__file__).resolve().parent / "README.md"
             
-            if not os.path.exists(readme_path):
-                messagebox.showerror("エラー", "READMEファイルが見つかりません。\nファイル: " + readme_path)
+            if not readme_path.exists():
+                messagebox.showerror("エラー", f"READMEファイルが見つかりません。\nファイル: {readme_path}")
                 return
             
             # READMEファイルの内容を読み込み
-            with open(readme_path, 'r', encoding='utf-8') as f:
+            with readme_path.open('r', encoding='utf-8') as f:
                 readme_content = f.read()
             
             # ヘルプウィンドウを作成
-            self._create_help_window(readme_content)
+            self._create_help_window(readme_content, readme_path)
                 
         except Exception as e:
             # エラーが発生した場合は代替手段を提供
             error_msg = f"READMEファイルを読み込めませんでした。\n\nエラー: {str(e)}\n\n代替手段:\n1. ファイルエクスプローラーでREADME.mdファイルを手動で開いてください\n2. テキストエディタでREADME.mdファイルを開いてください"
             messagebox.showerror("ヘルプファイルを読み込めません", error_msg)
     
-    def _create_help_window(self, content):
+    def _create_help_window(self, content, readme_path):
         """ヘルプウィンドウの作成"""
         # ヘルプウィンドウを作成
         help_window = Toplevel(self.app)
@@ -292,16 +294,16 @@ class MainController:
         # 外部で開くボタン
         def open_external():
             try:
-                readme_path = os.path.join(os.getcwd(), "README.md")
-                if os.name == 'nt':  # Windows
-                    os.startfile(readme_path)
-                elif os.name == 'posix':  # macOS/Linux
-                    if os.uname().sysname == 'Darwin':  # macOS
-                        subprocess.run(['open', readme_path], check=True)
-                    else:  # Linux
-                        subprocess.run(['xdg-open', readme_path], check=True)
+                resolved_path = readme_path.resolve()
+                system_name = platform.system()
+                if system_name == 'Windows':
+                    os.startfile(str(resolved_path))
+                elif system_name == 'Darwin':
+                    subprocess.run(['open', str(resolved_path)], check=True)
+                elif system_name == 'Linux':
+                    subprocess.run(['xdg-open', str(resolved_path)], check=True)
                 else:
-                    webbrowser.open(readme_path)
+                    webbrowser.open(resolved_path.as_uri())
             except Exception as e:
                 messagebox.showerror("エラー", f"外部アプリケーションで開けませんでした:\n{str(e)}")
         

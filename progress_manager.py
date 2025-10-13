@@ -53,6 +53,8 @@ class ProgressManager:
 
     def start_calculation_thread(self, inputs):
         """計算処理を別スレッドで開始"""
+        if hasattr(self.app, 'calc_button'):
+            self.app.calc_button.config(state='disabled', text="計算中...", bg=self.app.MEDIUM_GRAY)
         self.setup_progress_window()
         thread = threading.Thread(target=self.calculation_worker, args=(inputs,))
         thread.daemon = True
@@ -60,6 +62,7 @@ class ProgressManager:
 
     def calculation_worker(self, inputs):
         """計算処理のワーカースレッド"""
+        conn = None
         try:
             # ステータス更新
             self.app.after(0, lambda: self.status_label.config(text="データベースに接続中..."))
@@ -115,6 +118,12 @@ class ProgressManager:
             error_msg = f"予期しないエラー: {sanitized_error}"
             self.app.after(0, lambda: messagebox.showerror("システムエラー", error_msg))
             self.app.after(0, self.finish_calculation, False)
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except pyodbc.Error:
+                    pass
 
     def finish_calculation(self, success, db_data=None, stats_results=None, inputs=None):
         """計算完了処理"""
