@@ -121,10 +121,23 @@ class App(tk.Tk):
         main_canvas.bind('<Configure>', lambda e: on_frame_configure(e))
 
         if platform.system() == 'Windows':
-            main_canvas.bind_all('<MouseWheel>', lambda e: main_canvas.yview_scroll(int(-1*(e.delta/120)), 'units'))
+            def handle_mousewheel(event):
+                # ダイアログ上でのスクロール時にメイン画面まで動かないように制御
+                if event.widget.winfo_toplevel() is not self:
+                    return
+                main_canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+            main_canvas.bind_all('<MouseWheel>', handle_mousewheel)
         else:
-            main_canvas.bind_all('<Button-4>', lambda e: main_canvas.yview_scroll(-1, 'units'))
-            main_canvas.bind_all('<Button-5>', lambda e: main_canvas.yview_scroll(1, 'units'))
+            def handle_wheel_up(event):
+                if event.widget.winfo_toplevel() is not self:
+                    return
+                main_canvas.yview_scroll(-1, 'units')
+            def handle_wheel_down(event):
+                if event.widget.winfo_toplevel() is not self:
+                    return
+                main_canvas.yview_scroll(1, 'units')
+            main_canvas.bind_all('<Button-4>', handle_wheel_up)
+            main_canvas.bind_all('<Button-5>', handle_wheel_down)
 
         header_frame = tk.Frame(main_frame, bg=self.PRIMARY_BLUE, height=60)  # 80→60に削減
         header_frame.pack(fill='x', pady=(self.PADDING_Y_SMALL, self.PADDING_Y_SMALL))  # 上部パディング削減

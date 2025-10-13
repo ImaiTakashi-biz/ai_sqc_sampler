@@ -18,7 +18,7 @@ class UIManager:
         """UI更新"""
         self.clear_previous_results()
         texts = self.generate_result_texts(db_data, stats_results, inputs)
-        self.display_main_results(stats_results, texts['advice'])
+        self.display_main_results(stats_results, texts['advice'], texts['best5'])
         
         # テーブル形式のレビュー情報を表示
         if 'review_data' in texts:
@@ -37,6 +37,10 @@ class UIManager:
         # 調整情報の表示
         if 'adjustment_info' in stats_results and stats_results['adjustment_info']:
             self.display_adjustment_info(stats_results['adjustment_info'])
+        
+        # エクスポートボタンを最下部に表示
+        if hasattr(self.app, 'show_export_button'):
+            self.app.show_export_button()
 
     def clear_previous_results(self):
         """以前の結果をクリア"""
@@ -159,7 +163,7 @@ class UIManager:
             'advice': advice
         }
 
-    def display_main_results(self, stats_results, advice_text):
+    def display_main_results(self, stats_results, advice_text, best5_text):
         """メイン結果の表示"""
         # 1. セクション区切りとタイトルを表示
         if hasattr(self.app, 'section_divider'):
@@ -195,8 +199,14 @@ class UIManager:
             bd=1
         )
         self.app.advice_label.pack(pady=(0, 5))
+        # 4. best5 notice panel beneath advice
+        if hasattr(self.app, 'best3_var') and hasattr(self.app, 'best3_frame'):
+            self.app.best3_var.set(best5_text)
+            padx = getattr(self.app, 'PADDING_X_MEDIUM', 40)
+            pady = getattr(self.app, 'PADDING_Y_SMALL', 10)
+            self.app.best3_frame.pack(fill='x', padx=padx, pady=pady)
         
-        # 4. 検査水準の表示
+        # 5. display inspection level
         self.app.level_label = tk.Label(
             self.app.sampling_frame, 
             text=f"検査水準: {stats_results['level_text']}", 
@@ -207,11 +217,11 @@ class UIManager:
         )
         self.app.level_label.pack()
         
-        # 5. 追加機能ボタンを表示（OCカーブ表示、検査水準管理）
-        if hasattr(self.app, 'oc_curve_button'):
-            self.app.oc_curve_button.pack(pady=(5, 0))
+        # 6. display optional action buttons
         if hasattr(self.app, 'inspection_level_button'):
             self.app.inspection_level_button.pack(pady=(5, 0))
+        if hasattr(self.app, 'oc_curve_button'):
+            self.app.oc_curve_button.pack(pady=(5, 0))
         
         # 根拠の表示
         self.app.reason_label = tk.Label(
@@ -514,11 +524,6 @@ class UIManager:
         # self.app.review_var.set(texts['review'])
         # self.app.review_frame.pack(fill='x', padx=40, pady=10)
         
-        # 検査時の注意喚起
-        self.app.best3_var.set(texts['best5'])
-        self.app.best3_frame.pack(fill='x', padx=40, pady=10)
-        
-        # エクスポートボタンを表示
-        if hasattr(self.app, 'show_export_button'): 
-            self.app.show_export_button()
-
+        # 検査時の注意喚起（テキストのみ同期）
+        if hasattr(self.app, 'best3_var'):
+            self.app.best3_var.set(texts['best5'])
