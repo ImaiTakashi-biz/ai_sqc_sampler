@@ -262,43 +262,9 @@ class App(tk.Tk):
             bg=self.LIGHT_GRAY,
             anchor='w',
             justify='left',
-            wraplength=self.WRAPLENGTH_DEFAULT
+            wraplength=600
         )
         self.inspection_mode_info_label.pack(fill='x', pady=(0, self.PADDING_Y_SMALL))
-
-        # AQL/LTPD設計の入力項目
-        row2_frame = tk.Frame(input_frame, bg=self.LIGHT_GRAY)
-        row2_frame.pack(fill='x', pady=self.PADDING_Y_SMALL)
-        tk.Label(row2_frame, text="AQL(%):", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left', padx=(0, self.PADDING_Y_SMALL))
-        self.sample_aql_entry = tk.Entry(row2_frame, width=6, font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg="#ffffff", fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
-        self.sample_aql_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
-        self.sample_aql_entry.insert(0, str(config_defaults['aql']))
-        
-        tk.Label(row2_frame, text="LTPD(%):", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left', padx=(self.PADDING_Y_MEDIUM, self.PADDING_Y_SMALL))
-        self.sample_ltpd_entry = tk.Entry(row2_frame, width=6, font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg="#ffffff", fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
-        self.sample_ltpd_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
-        self.sample_ltpd_entry.insert(0, str(config_defaults['ltpd']))
-
-        row3_frame = tk.Frame(input_frame, bg=self.LIGHT_GRAY)
-        row3_frame.pack(fill='x', pady=self.PADDING_Y_SMALL)
-        tk.Label(row3_frame, text="α(生産者危険,%):", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left', padx=(0, self.PADDING_Y_SMALL))
-        self.sample_alpha_entry = tk.Entry(row3_frame, width=6, font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg="#ffffff", fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
-        self.sample_alpha_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
-        self.sample_alpha_entry.insert(0, str(config_defaults['alpha']))
-        
-        tk.Label(row3_frame, text="β(消費者危険,%):", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left', padx=(self.PADDING_Y_MEDIUM, self.PADDING_Y_SMALL))
-        self.sample_beta_entry = tk.Entry(row3_frame, width=6, font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg="#ffffff", fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
-        self.sample_beta_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
-        self.sample_beta_entry.insert(0, str(config_defaults['beta']))
-
-        row4_frame = tk.Frame(input_frame, bg=self.LIGHT_GRAY)
-        row4_frame.pack(fill='x', pady=self.PADDING_Y_SMALL)
-        tk.Label(row4_frame, text="c値(許容不良数):", font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), fg=self.DARK_GRAY, bg=self.LIGHT_GRAY).pack(side='left', padx=(0, self.PADDING_Y_SMALL))
-        self.sample_c_entry = tk.Entry(row4_frame, width=6, font=(self.FONT_FAMILY, self.FONT_SIZE_MEDIUM), bg="#ffffff", fg=self.DARK_GRAY, relief="flat", bd=1, highlightthickness=1, highlightbackground=self.MEDIUM_GRAY, highlightcolor=self.PRIMARY_BLUE)
-        self.sample_c_entry.pack(side='left', padx=self.PADDING_Y_SMALL)
-        self.sample_c_entry.insert(0, str(config_defaults['c_value']))
-
-        tk.Label(input_frame, text="※ AQL: これ以下なら合格とみなす不良率（例: 0.25%）\n※ LTPD: これ以上なら不合格にしたい不良率（例: 1.0%）\n※ α: 良いロットを誤って不合格にする確率（例: 5%）\n※ β: 悪いロットを誤って合格にする確率（例: 10%）\n※ c値: 抜取検査で許容できる不良品の最大数（例: c=0なら不良品が1つでも見つかれば不合格）", fg=self.DARK_GRAY, bg=self.LIGHT_GRAY, font=(self.FONT_FAMILY, self.FONT_SIZE_SMALL), wraplength=self.WRAPLENGTH_DEFAULT, justify='left').pack(pady=(self.PADDING_Y_SMALL, 0))  # 下部パディング削除
 
         row5_frame = tk.Frame(input_frame, bg=self.LIGHT_GRAY)
         row5_frame.pack(fill='x', pady=self.PADDING_Y_SMALL)
@@ -392,11 +358,7 @@ class App(tk.Tk):
         if not preset:
             return
 
-        self._set_entry_value(self.sample_aql_entry, preset.get("aql"))
-        self._set_entry_value(self.sample_ltpd_entry, preset.get("ltpd"))
-        self._set_entry_value(self.sample_alpha_entry, preset.get("alpha"))
-        self._set_entry_value(self.sample_beta_entry, preset.get("beta"))
-        self._set_entry_value(self.sample_c_entry, preset.get("c_value"))
+        self.current_mode_details = preset.copy()
         self._update_inspection_mode_info(preset)
         if hasattr(self, 'inspection_mode_selector'):
             self.inspection_mode_selector.set(self.inspection_mode_var.get())
@@ -421,6 +383,10 @@ class App(tk.Tk):
             self.inspection_mode_var.set(label)
             if hasattr(self, 'inspection_mode_selector'):
                 self.inspection_mode_selector.set(label)
+            if hasattr(self.controller, 'config_manager'):
+                details = self.controller.config_manager.get_inspection_mode_details(current_key)
+                self.current_mode_details = details
+                self._update_inspection_mode_info(details)
 
     def _format_inspection_mode_summary(self, details):
         """検査区分のサマリー文字列を生成"""
@@ -432,7 +398,7 @@ class App(tk.Tk):
         beta = self._format_numeric(details.get('beta'))
         c_value = self._format_numeric(details.get('c_value'))
         description = details.get('description', '')
-        return f"AQL {aql}% | LTPD {ltpd}% | α {alpha}% | β {beta}% | c {c_value} | 用途: {description}"
+        return f"AQL: {aql}%  LTPD: {ltpd}%  α: {alpha}%  β: {beta}%  c値: {c_value}\n用途: {description}"
 
     def _update_inspection_mode_info(self, details):
         """検査区分の説明ラベルを更新"""

@@ -9,10 +9,10 @@ import os
 import platform
 import subprocess
 import webbrowser
+from datetime import datetime
 from pathlib import Path
 from gui import App
 from database import DatabaseManager
-from validation import InputValidator
 from config_manager import ConfigManager
 from settings_dialog import SettingsDialog
 from calculation_engine import CalculationEngine
@@ -62,93 +62,109 @@ class MainController:
         self.progress_manager.start_calculation_thread(inputs)
 
     def _get_user_inputs(self):
-        """ユーザー入力の取得と検証（AQL/LTPD設計対応）"""
+        """ユーザー入力を取得し、検証および整形して返す"""
         if hasattr(self.app, 'reset_input_highlights'):
-            self.app.reset_input_highlights()
-        inputs = {
-            'product_number': self.app.sample_pn_entry.get().strip(),
-            'lot_size_str': self.app.sample_qty_entry.get().strip(),
-            'start_date': self.app.sample_start_date_entry.get().strip() or None,
-            'end_date': self.app.sample_end_date_entry.get().strip() or None,
-            'aql_str': self.app.sample_aql_entry.get().strip() or "0.25",
-            'ltpd_str': self.app.sample_ltpd_entry.get().strip() or "1.0",
-            'alpha_str': self.app.sample_alpha_entry.get().strip() or "5.0",
-            'beta_str': self.app.sample_beta_entry.get().strip() or "10.0",
-            'c_str': self.app.sample_c_entry.get().strip() or "0"
-        }
-
-        mode_label = None
-        mode_key = getattr(self.app, "current_inspection_mode_key", None)
-        if hasattr(self.app, "inspection_mode_var"):
             try:
-                mode_label = self.app.inspection_mode_var.get()
+                self.app.reset_input_highlights()
+            except Exception:
+                pass
+
+        product_number = self.app.sample_pn_entry.get().strip()
+        lot_size_text = self.app.sample_qty_entry.get().strip().replace(',', '')
+        start_date_raw = self.app.sample_start_date_entry.get().strip() or None
+        end_date_raw = self.app.sample_end_date_entry.get().strip() or None
+
+        errors = []
+        lot_size = None
+
+        if not product_number:
+            errors.append('品番を入力してください。')
+
+        if not lot_size_text:
+            errors.append('ロットサイズを入力してください。')
+        else:
+            try:
+                lot_size = int(lot_size_text)
+                if lot_size <= 0:
+                    raise ValueError
+            except ValueError:
+                errors.append('ロットサイズは1以上の整数で入力してください。')
+
+        def _validate_date(label, value):
+            if not value:
+                return None
+            try:
+                parsed = datetime.strptime(value, '%Y-%m-%d')
+                return parsed.strftime('%Y-%m-%d')
+            except ValueError:
+                errors.append(f"{label}はYYYY-MM-DD形式で入力してください。")
+                return None
+
+        start_date = _validate_date('開始日', start_date_raw)
+        end_date = _validate_date('終了日', end_date_raw)
+
+        if start_date and end_date and start_date > end_date:
+            errors.append('開始日は終了日以前の日付を指定してください。')
+
+        mode_key = getattr(self.app, 'current_inspection_mode_key', None)
+        mode_label = None
+        if hasattr(self.app, 'inspection_mode_var'):
+            try:
+                mode_label = self.app.inspection_mode_var.get().strip()
             except tk.TclError:
                 mode_label = None
 
-        if mode_label:
-            inputs['inspection_mode_label'] = mode_label
-        if mode_key:
-            inputs['inspection_mode_key'] = mode_key
-            if hasattr(self.config_manager, "get_inspection_mode_details"):
-                try:
-                    inputs['inspection_mode_details'] = self.config_manager.get_inspection_mode_details(mode_key)
-                except Exception:
-                    pass
-        
-        # 入力値の検証
-        validator = InputValidator()
-        is_valid, errors, validated_data = validator.validate_aql_ltpd_inputs(
-            inputs['product_number'],
-            inputs['lot_size_str'],
-            inputs['aql_str'],
-            inputs['ltpd_str'],
-            inputs['alpha_str'],
-            inputs['beta_str'],
-            inputs['c_str'],
-            inputs['start_date'],
-            inputs['end_date']
-        )
-        
-        if not is_valid:
-            error_message = "以下の入力エラーがあります：\n" + "\n".join(f"• {error}" for error in errors)
-            self._highlight_invalid_inputs(errors)
-            messagebox.showwarning("入力エラー", error_message)
+        if not mode_key:
+            mode_key = self.config_manager.get_inspection_mode()
+
+        try:
+            mode_details = self.config_manager.get_inspection_mode_details(mode_key)
+        except Exception:
+            mode_details = {}
+
+        if not mode_label:
+            try:
+                mode_label = self.config_manager.get_inspection_mode_label(mode_key)
+            except Exception:
+                mode_label = ''
+
+        if errors or lot_size is None:
+            message = '入力内容に誤りがあります。\n' + '\n'.join(f"・{msg}" for msg in errors)
+            messagebox.showwarning('入力エラー', message)
             return None
 
-        if mode_label:
-            validated_data['inspection_mode_label'] = mode_label
-        if mode_key:
-            validated_data['inspection_mode_key'] = mode_key
-        if inputs.get('inspection_mode_details'):
-            validated_data['inspection_mode_details'] = inputs['inspection_mode_details']
+        mode_details = mode_details.copy() if isinstance(mode_details, dict) else {}
+        if mode_label and not mode_details.get('label'):
+            mode_details['label'] = mode_label
 
-        return validated_data
-    
-    def _highlight_invalid_inputs(self, errors):
-        """入力エラーに応じて対象フィールドを強調表示"""
-        if not hasattr(self.app, 'mark_entry_error'):
-            return
-        
-        keyword_map = [
-            (("品番",), getattr(self.app, "sample_pn_entry", None)),
-            (("数量", "ロット"), getattr(self.app, "sample_qty_entry", None)),
-            (("AQL",), getattr(self.app, "sample_aql_entry", None)),
-            (("LTPD",), getattr(self.app, "sample_ltpd_entry", None)),
-            (("α", "生産者"), getattr(self.app, "sample_alpha_entry", None)),
-            (("β", "消費者"), getattr(self.app, "sample_beta_entry", None)),
-            (("c値", "許容不良"), getattr(self.app, "sample_c_entry", None)),
-            (("開始日", "開始日付", "開始日時"), getattr(self.app, "sample_start_date_entry", None)),
-            (("終了日", "終了日付", "終了日時"), getattr(self.app, "sample_end_date_entry", None)),
-            (("日付", "期間"), getattr(self.app, "sample_start_date_entry", None))
-        ]
-        
-        for error in errors:
-            for keywords, widget in keyword_map:
-                if widget is None:
-                    continue
-                if any(keyword in error for keyword in keywords):
-                    self.app.mark_entry_error(widget)
-                    break
+        def _as_float(value, fallback):
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return fallback
+
+        def _as_int(value, fallback):
+            try:
+                return int(round(float(value)))
+            except (TypeError, ValueError):
+                return fallback
+
+        inputs = {
+            'product_number': product_number,
+            'lot_size': lot_size,
+            'start_date': start_date,
+            'end_date': end_date,
+            'aql': _as_float(mode_details.get('aql', 0.25), 0.25),
+            'ltpd': _as_float(mode_details.get('ltpd', 1.0), 1.0),
+            'alpha': _as_float(mode_details.get('alpha', 5.0), 5.0),
+            'beta': _as_float(mode_details.get('beta', 10.0), 10.0),
+            'c_value': _as_int(mode_details.get('c_value', 0), 0),
+            'inspection_mode_key': mode_key,
+            'inspection_mode_label': mode_label,
+            'inspection_mode_details': mode_details,
+        }
+
+        return inputs
 
     def show_product_numbers_list(self):
         """品番リストの表示"""
@@ -185,16 +201,14 @@ class MainController:
                 self.app.refresh_inspection_mode_choices(label_to_key, current_mode_key)
 
             if hasattr(self.app, "apply_inspection_mode_preset"):
-                defaults_source = getattr(self.config_manager, "DEFAULT_CONFIG", {})
-                preset_values = {
-                    "aql": self.config_manager.get("default_aql", defaults_source.get("default_aql", 0.25)),
-                    "ltpd": self.config_manager.get("default_ltpd", defaults_source.get("default_ltpd", 1.0)),
-                    "alpha": self.config_manager.get("default_alpha", defaults_source.get("default_alpha", 5.0)),
-                    "beta": self.config_manager.get("default_beta", defaults_source.get("default_beta", 10.0)),
-                    "c_value": self.config_manager.get("default_c_value", defaults_source.get("default_c_value", 0)),
-                    "description": self.config_manager.get_inspection_mode_details(current_mode_key).get("description", "")
-                }
-                mode_label = self.config_manager.get_inspection_mode_label(current_mode_key)
+                try:
+                    preset_values = self.config_manager.get_inspection_mode_details(current_mode_key)
+                except Exception:
+                    preset_values = {}
+                try:
+                    mode_label = self.config_manager.get_inspection_mode_label(current_mode_key)
+                except Exception:
+                    mode_label = ""
                 self.app.apply_inspection_mode_preset(preset_values, mode_label)
 
     def show_help(self):
@@ -483,12 +497,22 @@ class MainController:
             self.last_inputs.get('lot_size', 1000)
         )
     
+    def _get_inspection_level_from_mode_key(self, mode_key):
+        """検査区分キーから検査水準を取得"""
+        from inspection_level_manager import InspectionLevel
+        
+        mapping = {
+            "standard": InspectionLevel.NORMAL,
+            "tightened": InspectionLevel.TIGHTENED,
+            "reduced": InspectionLevel.REDUCED
+        }
+        return mapping.get(mode_key, InspectionLevel.NORMAL)
+    
     def show_inspection_level(self):
         """検査水準管理の表示"""
-        # 現在の検査水準を決定
-        current_level = self.inspection_level_manager.get_current_inspection_level(
-            self.last_inputs.get('aql', 0.25) if hasattr(self, 'last_inputs') and self.last_inputs else 0.25
-        )
+        # 現在の検査区分を設定から取得
+        current_mode_key = self.config_manager.get_inspection_mode()
+        current_level = self._get_inspection_level_from_mode_key(current_mode_key)
         
         # 最近の結果（サンプルデータ）
         recent_results = [
@@ -499,12 +523,12 @@ class MainController:
             {'date': '2024-01-05', 'passed': True}
         ]
         
-        # 検査水準管理ダイアログの表示
+        # 検査水準管理ダイアログの表示（config_managerを渡す）
         self.inspection_level_manager.create_inspection_level_dialog(
             self.app,
             current_level,
             recent_results,
-            self.last_inputs.get('aql', 0.25) if hasattr(self, 'last_inputs') and self.last_inputs else 0.25
+            self.config_manager
         )
 
 

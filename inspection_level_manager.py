@@ -39,7 +39,7 @@ class InspectionLevelManager:
             }
         }
     
-    def get_current_inspection_level(self, aql, recent_results=None):
+    def get_current_inspection_level(self, aql=None, recent_results=None):
         """現在の検査水準を決定"""
         if recent_results is None:
             recent_results = []
@@ -75,18 +75,18 @@ class InspectionLevelManager:
         
         return int(base_sample_size * adjustments.get(inspection_level, 1.0))
     
-    def create_inspection_level_dialog(self, parent, current_level, recent_results, aql):
+    def create_inspection_level_dialog(self, parent, current_level, recent_results, config_manager=None):
         """検査水準管理ダイアログの作成（運用管理用）"""
         dialog = tk.Toplevel(parent)
-        dialog.title("検査水準管理（運用管理）")
-        dialog.geometry("700x500")
+        dialog.title("検査水準管理")
+        dialog.geometry("750x600")
         dialog.configure(bg="#f8f9fa")
         dialog.resizable(True, True)
         
         # 中央配置
-        x = (parent.winfo_screenwidth() // 2) - 350
-        y = (parent.winfo_screenheight() // 2) - 250
-        dialog.geometry(f"700x500+{x}+{y}")
+        x = (parent.winfo_screenwidth() // 2) - 375
+        y = (parent.winfo_screenheight() // 2) - 300
+        dialog.geometry(f"750x600+{x}+{y}")
         
         # モーダル表示
         dialog.transient(parent)
@@ -95,22 +95,24 @@ class InspectionLevelManager:
         # タイトル
         title_label = tk.Label(
             dialog, 
-            text="📋 検査水準管理（運用管理）", 
+            text="📋 検査水準管理", 
             font=("Meiryo", 16, "bold"), 
             fg="#2c3e50", 
             bg="#f8f9fa"
         )
         title_label.pack(pady=(20, 10))
         
-        # 注意事項
-        notice_label = tk.Label(
+        # 説明
+        explanation_label = tk.Label(
             dialog,
-            text="※ 抜取数はAQL/LTPD設計により統計的に計算されます",
+            text="検査区分（緩和・標準・強化）の切替ルールと運用管理を行います。\n抜取数は各検査区分のデフォルト値（AQL/LTPD/α/β/c値）により統計的に計算されます。",
             font=("Meiryo", 10),
             fg="#6c757d",
-            bg="#f8f9fa"
+            bg="#f8f9fa",
+            wraplength=700,
+            justify='center'
         )
-        notice_label.pack(pady=(0, 10))
+        explanation_label.pack(pady=(0, 15))
         
         # 現在の検査水準表示
         current_frame = tk.LabelFrame(
@@ -132,12 +134,29 @@ class InspectionLevelManager:
         
         level_label = tk.Label(
             current_frame, 
-            text=f"検査水準: {current_level.value}", 
+            text=f"検査区分: {current_level.value}", 
             font=("Meiryo", 14, "bold"), 
             fg=level_colors.get(current_level, "#2c3e50"), 
             bg="#f8f9fa"
         )
         level_label.pack()
+        
+        # 検査区分のデフォルト値表示
+        if config_manager:
+            try:
+                mode_key = self._get_mode_key_from_level(current_level)
+                details = config_manager.get_inspection_mode_details(mode_key)
+                values_text = f"AQL {details.get('aql', 0):.2f}% | LTPD {details.get('ltpd', 0):.2f}% | α {details.get('alpha', 0):.1f}% | β {details.get('beta', 0):.1f}% | c値 {details.get('c_value', 0)}"
+                values_label = tk.Label(
+                    current_frame,
+                    text=values_text,
+                    font=("Meiryo", 10),
+                    fg="#495057",
+                    bg="#f8f9fa"
+                )
+                values_label.pack(pady=(5, 0))
+            except Exception:
+                pass
         
         # 切替ルールの表示
         rules_frame = tk.LabelFrame(
@@ -213,9 +232,10 @@ class InspectionLevelManager:
     
     def generate_rules_text(self, current_level, recent_results):
         """切替ルールの説明テキストを生成（運用管理用）"""
-        text = f"【現在の検査水準: {current_level.value}】\n\n"
-        text += "※ 抜取数はAQL/LTPD設計により統計的に計算されます\n"
-        text += "※ 検査水準は運用管理・品質トレンド監視に使用されます\n\n"
+        text = f"【現在の検査区分: {current_level.value}】\n\n"
+        text += "※ 抜取数は各検査区分のデフォルト値（AQL/LTPD/α/β/c値）により統計的に計算されます\n"
+        text += "※ 検査区分は運用管理・品質トレンド監視に使用されます\n"
+        text += "※ デフォルト値は設定画面で変更可能です\n\n"
         
         if current_level == InspectionLevel.NORMAL:
             text += "標準検査が適用されています。\n\n"
@@ -240,12 +260,22 @@ class InspectionLevelManager:
         
         text += "【ISO 2859-1標準について】\n"
         text += "• 国際標準化機構（ISO）が定める抜取検査の国際規格\n"
-        text += "• 統計的品質管理の原則に基づく検査水準の切替ルール\n"
+        text += "• 統計的品質管理の原則に基づく検査区分の切替ルール\n"
         text += "• 品質の変動に応じて検査の厳しさを動的に調整\n"
-        text += "• 注意：抜取数はAQL/LTPD設計により統計的に計算されます\n"
-        text += "• 生産者と消費者の両方のリスクを適切に管理"
+        text += "• 注意：抜取数は各検査区分のデフォルト値により統計的に計算されます\n"
+        text += "• 生産者と消費者の両方のリスクを適切に管理\n"
+        text += "• 各検査区分のデフォルト値は設定画面で変更可能です"
         
         return text
+    
+    def _get_mode_key_from_level(self, level):
+        """検査水準から検査区分キーを取得"""
+        mapping = {
+            InspectionLevel.NORMAL: "standard",
+            InspectionLevel.TIGHTENED: "tightened", 
+            InspectionLevel.REDUCED: "reduced"
+        }
+        return mapping.get(level, "standard")
     
     def format_recent_results(self, results):
         """最近の結果をフォーマット"""

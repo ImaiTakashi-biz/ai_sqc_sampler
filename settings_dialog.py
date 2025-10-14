@@ -18,16 +18,16 @@ class SettingsDialog:
         self.security_manager = getattr(config_manager, "security_manager", SecurityManager())
         self.dialog = None
         self.db_path_var = None
-        self.default_vars = {}
+        self.preset_vars = {}
         
     def show(self):
         """設定ダイアログの表示"""
         self.dialog = tk.Toplevel(self.parent)
-        self.dialog.title("設定")
-        self.dialog.geometry("500x600")
+        self.dialog.title("アプリケーション設定")
+        self.dialog.geometry("650x600")
         self.dialog.configure(bg="#f0f0f0")
         self.dialog.resizable(True, True)
-        self.dialog.minsize(500, 600)
+        self.dialog.minsize(650, 500)
         
         # モーダル表示
         self.dialog.transient(self.parent)
@@ -48,15 +48,55 @@ class SettingsDialog:
     def _center_dialog(self):
         """ダイアログを中央に配置"""
         self.dialog.update_idletasks()
-        x = (self.dialog.winfo_screenwidth() // 2) - 250
+        x = (self.dialog.winfo_screenwidth() // 2) - 325
         y = (self.dialog.winfo_screenheight() // 2) - 300
-        self.dialog.geometry(f"500x600+{x}+{y}")
+        self.dialog.geometry(f"650x600+{x}+{y}")
     
     def _create_widgets(self):
         """ウィジェットの作成"""
-        # メインフレーム
-        main_frame = tk.Frame(self.dialog, bg="#f0f0f0")
-        main_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        # スクロール可能なフレームの作成
+        canvas = tk.Canvas(self.dialog, bg="#f0f0f0", highlightthickness=0)
+        scrollbar = tk.Scrollbar(self.dialog, orient="vertical", command=canvas.yview)
+        scrollable_frame = tk.Frame(canvas, bg="#f0f0f0")
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # レイアウト
+        canvas.pack(side="left", fill="both", expand=True, padx=(15, 0), pady=15)
+        scrollbar.pack(side="right", fill="y", pady=15)
+        
+        # スクロール可能フレームの幅を調整
+        def configure_scroll_region(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            # キャンバスの幅に合わせてスクロール可能フレームの幅を調整
+            canvas_width = canvas.winfo_width()
+            if canvas_width > 1:  # キャンバスが初期化されている場合のみ
+                canvas.itemconfig(canvas.find_all()[0], width=canvas_width)
+        
+        scrollable_frame.bind("<Configure>", configure_scroll_region)
+        canvas.bind("<Configure>", configure_scroll_region)
+        
+        # マウスホイールでのスクロール機能
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        def _bind_to_mousewheel(event):
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        def _unbind_from_mousewheel(event):
+            canvas.unbind_all("<MouseWheel>")
+        
+        canvas.bind('<Enter>', _bind_to_mousewheel)
+        canvas.bind('<Leave>', _unbind_from_mousewheel)
+        
+        # メインフレーム（スクロール可能フレーム内）
+        main_frame = scrollable_frame
         
         # タイトル
         title_label = tk.Label(
@@ -75,8 +115,8 @@ class SettingsDialog:
             font=("Meiryo", 12, "bold"), 
             fg="#2c3e50", 
             bg="#f0f0f0",
-            padx=10,
-            pady=10
+            padx=15,
+            pady=12
         )
         db_frame.pack(fill='x', pady=(0, 15))
         
@@ -134,56 +174,81 @@ class SettingsDialog:
         )
         test_button.pack(pady=(5, 0))
         
-        # デフォルト値設定セクション
-        default_frame = tk.LabelFrame(
-            main_frame, 
-            text="デフォルト値設定", 
-            font=("Meiryo", 12, "bold"), 
-            fg="#2c3e50", 
+        # 検査区分デフォルト値設定セクション
+        presets_frame = tk.LabelFrame(
+            main_frame,
+            text="検査区分ごとのデフォルト値設定",
+            font=("Meiryo", 12, "bold"),
+            fg="#2c3e50",
             bg="#f0f0f0",
-            padx=10,
-            pady=10
+            padx=15,
+            pady=12
         )
-        default_frame.pack(fill='x', pady=(0, 15))
+        presets_frame.pack(fill='x', pady=(0, 15))
         
-        defaults_source = getattr(self.config_manager, "DEFAULT_CONFIG", {})
-        default_fields = [
-            ("default_aql", "デフォルトAQL(%)", float, 0.25),
-            ("default_ltpd", "デフォルトLTPD(%)", float, 1.0),
-            ("default_alpha", "デフォルトα(%)（生産者危険）", float, 5.0),
-            ("default_beta", "デフォルトβ(%)（消費者危険）", float, 10.0),
-            ("default_c_value", "デフォルトc値", int, 0),
+        # 説明ラベル
+        explanation_label = tk.Label(
+            presets_frame,
+            text="各検査区分（緩和検査・標準検査・強化検査）のAQL、LTPD、α、β、c値を設定できます。\nこれらの値は検査区分選択時に自動的に適用されます。",
+            font=("Meiryo", 9),
+            fg="#7f8c8d",
+            bg="#f0f0f0",
+            wraplength=580,
+            justify='left'
+        )
+        explanation_label.pack(anchor='w', pady=(0, 10))
+
+        self.preset_vars = {}
+        param_specs = [
+            ("aql", "AQL(%)", float),
+            ("ltpd", "LTPD(%)", float),
+            ("alpha", "α(%)（生産者危険）", float),
+            ("beta", "β(%)（消費者危険）", float),
+            ("c_value", "c値", int)
         ]
-        
-        for key, label, caster, fallback in default_fields:
-            row = tk.Frame(default_frame, bg="#f0f0f0")
-            row.pack(fill='x', pady=(0, 5))
-            
-            tk.Label(
-                row, 
-                text=label, 
-                font=("Meiryo", 10), 
-                fg="#2c3e50", 
-                bg="#f0f0f0"
-            ).pack(side='left')
-            
-            current_value = self.config_manager.get(key, defaults_source.get(key, fallback))
-            var = tk.StringVar(value=str(current_value))
-            entry = tk.Entry(
-                row, 
-                textvariable=var, 
-                width=10, 
-                font=("Meiryo", 10), 
-                bg="#ffffff", 
-                fg="#2c3e50", 
-                relief="flat", 
-                bd=1, 
-                highlightthickness=1, 
-                highlightbackground="#bdc3c7", 
-                highlightcolor="#3498db"
+
+        for mode_key, label in self.config_manager.get_inspection_mode_choices().items():
+            details = self.config_manager.get_inspection_mode_details(mode_key)
+            mode_frame = tk.LabelFrame(
+                presets_frame,
+                text=f"{label}のデフォルト値",
+                font=("Meiryo", 11, "bold"),
+                fg="#2c3e50",
+                bg="#f0f0f0",
+                padx=12,
+                pady=10
             )
-            entry.pack(side='right')
-            self.default_vars[key] = (var, caster, label)
+            mode_frame.pack(fill='x', pady=(0, 12))
+
+            self.preset_vars[mode_key] = {}
+            for param_key, param_label, caster in param_specs:
+                row = tk.Frame(mode_frame, bg="#f0f0f0")
+                row.pack(fill='x', pady=(0, 4))
+
+                tk.Label(
+                    row,
+                    text=param_label,
+                    font=("Meiryo", 9),
+                    fg="#2c3e50",
+                    bg="#f0f0f0"
+                ).pack(side='left')
+
+                var = tk.StringVar(value=str(details.get(param_key, "")))
+                entry = tk.Entry(
+                    row,
+                    textvariable=var,
+                    width=12,
+                    font=("Meiryo", 9),
+                    bg="#ffffff",
+                    fg="#2c3e50",
+                    relief="flat",
+                    bd=1,
+                    highlightthickness=1,
+                    highlightbackground="#bdc3c7",
+                    highlightcolor="#3498db"
+                )
+                entry.pack(side='right', padx=(10, 0))
+                self.preset_vars[mode_key][param_key] = (var, caster, param_label)
         
         # ボタンフレーム
         button_frame = tk.Frame(main_frame, bg="#f0f0f0")
@@ -310,50 +375,53 @@ class SettingsDialog:
         if messagebox.askyesno("確認", "設定をデフォルト値に戻しますか？"):
             self.config_manager.reset_to_defaults()
             self.db_path_var.set(self.config_manager.get_database_path())
-            defaults_source = getattr(self.config_manager, "DEFAULT_CONFIG", {})
-            for key, (var, _, _) in self.default_vars.items():
-                var.set(str(self.config_manager.get(key, defaults_source.get(key))))
+            for mode_key, param_map in self.preset_vars.items():
+                details = self.config_manager.get_inspection_mode_details(mode_key)
+                for param_key, (var, _, _) in param_map.items():
+                    var.set(str(details.get(param_key, "")))
             messagebox.showinfo("完了", "設定をデフォルト値に戻しました。")
     
     def _ok(self):
         """OKボタンの処理"""
         try:
-            # 入力値の検証
             if not self.config_manager.set_database_path(self.db_path_var.get()):
                 return
 
-            validated_values = {}
-            for key, (var, caster, label) in self.default_vars.items():
-                raw_value = var.get().strip()
-                if not raw_value:
-                    messagebox.showerror("エラー", f"{label} を入力してください。")
-                    return
-                
-                try:
-                    value = caster(raw_value)
-                except ValueError:
-                    messagebox.showerror("エラー", f"{label} には数値を入力してください。")
-                    return
-                if caster is int and value < 0:
-                    messagebox.showerror("エラー", "c値は0以上の整数で入力してください。")
-                    return
-                if caster is float:
-                    if key in ("default_alpha", "default_beta") and not (0 <= value <= 100):
-                        messagebox.showerror("エラー", "αとβは0以上100以下の数値で入力してください。")
+            for mode_key, param_map in self.preset_vars.items():
+                values = {}
+                for param_key, (var, caster, label) in param_map.items():
+                    raw_value = var.get().strip()
+                    if not raw_value:
+                        messagebox.showerror("エラー", f"{label} を入力してください。")
                         return
-                    if value < 0:
+                    try:
+                        value = caster(raw_value)
+                    except ValueError:
+                        messagebox.showerror("エラー", f"{label} には数値を入力してください。")
+                        return
+                    if caster is float and value < 0:
                         messagebox.showerror("エラー", f"{label} は0以上の数値で入力してください。")
                         return
-                
-                validated_values[key] = value
-            
-            # 設定の保存
-            for key, value in validated_values.items():
-                self.config_manager.set(key, value)
-            
+                    if param_key in ("alpha", "beta") and not (0 <= value <= 100):
+                        messagebox.showerror("エラー", f"{label} は0以上100以下の範囲で入力してください。")
+                        return
+                    if param_key == "c_value" and value < 0:
+                        messagebox.showerror("エラー", "c値は0以上の整数で入力してください。")
+                        return
+                    values[param_key] = value
+
+                self.config_manager.set_inspection_preset(
+                    mode_key,
+                    aql=values["aql"],
+                    ltpd=values["ltpd"],
+                    alpha=values["alpha"],
+                    beta=values["beta"],
+                    c_value=values["c_value"]
+                )
+
             messagebox.showinfo("完了", "設定を保存しました。")
             self.dialog.destroy()
-            
+
         except ValueError:
             messagebox.showerror("エラー", "入力値が正しくありません。数値を確認してください。")
         except Exception as e:

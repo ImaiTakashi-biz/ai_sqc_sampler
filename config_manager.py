@@ -1,12 +1,40 @@
 """
 設定管理モジュール
-アプリケーション全体で共有する設定値の読み書きを担う
+アプリケーション全体で使用する設定値の読み書きを担当する
 """
 
 import os
 import json
+from copy import deepcopy
 from tkinter import filedialog, messagebox
+
 from security_manager import SecurityManager
+
+
+# 検査区分の定義
+# 各検査区分は設定画面でAQL、LTPD、α、β、c値を個別に設定可能
+INSPECTION_MODE_META = {
+    "tightened": {
+        "label": "強化",
+        "description": "初期流動・不具合再発時"
+    },
+    "standard": {
+        "label": "標準",
+        "description": "通常ロット"
+    },
+    "reduced": {
+        "label": "緩和",
+        "description": "安定生産・顧客信頼製品"
+    }
+}
+
+# 各検査区分のデフォルト値
+# ユーザーは設定画面でこれらの値を変更可能
+DEFAULT_PRESETS = {
+    "tightened": {"aql": 0.10, "ltpd": 0.50, "alpha": 3.0, "beta": 5.0, "c_value": 0},
+    "standard": {"aql": 0.25, "ltpd": 1.0, "alpha": 5.0, "beta": 10.0, "c_value": 0},
+    "reduced": {"aql": 0.40, "ltpd": 1.5, "alpha": 10.0, "beta": 15.0, "c_value": 0}
+}
 
 
 class ConfigManager:
@@ -14,7 +42,6 @@ class ConfigManager:
 
     CONFIG_FILE = "app_config.json"
 
-    # デフォルト設定
     DEFAULT_CONFIG = {
         "database_path": "不良情報記録.accdb",
         "window_geometry": "1000x700",
@@ -24,63 +51,87 @@ class ConfigManager:
         "default_alpha": 5.0,
         "default_beta": 10.0,
         "default_c_value": 0,
-        "inspection_mode": "standard"
-    }
-
-    # 3段階検査区分プリセット
-    INSPECTION_MODES = {
-        "tightened": {
-            "label": "強化",
-            "aql": 0.10,
-            "ltpd": 0.50,
-            "alpha": 3.0,
-            "beta": 5.0,
-            "c_value": 0,
-            "description": "初期流動・不具合再発時"
-        },
-        "standard": {
-            "label": "標準",
-            "aql": 0.25,
-            "ltpd": 1.00,
-            "alpha": 5.0,
-            "beta": 10.0,
-            "c_value": 0,
-            "description": "通常ロット"
-        },
-        "reduced": {
-            "label": "緩和",
-            "aql": 0.40,
-            "ltpd": 1.50,
-            "alpha": 10.0,
-            "beta": 15.0,
-            "c_value": 0,
-            "description": "安定生産・顧客信頼製品"
-        }
+        "inspection_mode": "standard",
+        "inspection_presets": deepcopy(DEFAULT_PRESETS)
     }
 
     def __init__(self):
         self.security_manager = SecurityManager()
         self.config = self._load_config()
+        # アプリ起動時は毎回標準検査に設定（検査区分の設定値は保持）
+        self.config["inspection_mode"] = "standard"
+        # 検査区分の設定値は上書きせず、default_*項目のみ標準検査の値に更新
+        self._sync_legacy_defaults_for_startup()
+        # 設定ファイルが存在しない場合は保存
+        if not os.path.exists(self.CONFIG_FILE):
+            self.save_config()
+        else:
+            # 起動時の検査区分を標準検査に設定して保存
+            self.save_config()
 
+    # ------------------------------------------------------------------
+    # 設定ファイルの読み書き
+    # ------------------------------------------------------------------
     def _load_config(self):
         """設定ファイルの読み込み"""
         try:
             if os.path.exists(self.CONFIG_FILE):
                 with open(self.CONFIG_FILE, "r", encoding="utf-8") as handle:
                     loaded = json.load(handle)
-                    merged_config = self.DEFAULT_CONFIG.copy()
-                    merged_config.update(loaded)
-                    merged_config["inspection_mode"] = self._normalize_mode_key(
-                        merged_config.get("inspection_mode", self.DEFAULT_CONFIG["inspection_mode"])
-                    )
-                    return merged_config
 
-            defaults = self.DEFAULT_CONFIG.copy()
+                merged = deepcopy(self.DEFAULT_CONFIG)
+                for key, value in loaded.items():
+                    if key == "inspection_presets":
+                        continue
+                    merged[key] = value
+
+                presets = deepcopy(self.DEFAULT_CONFIG["inspection_presets"])
+                user_presets = loaded.get("inspection_presets", {})
+                for mode_key in INSPECTION_MODE_META.keys():
+                    if mode_key in user_presets and isinstance(user_presets[mode_key], dict):
+                        for param in ["aql", "ltpd", "alpha", "beta", "c_value"]:
+                            if param in user_presets[mode_key]:
+                                try:
+                                    value = float(user_presets[mode_key][param])
+                                except (TypeError, ValueError):
+                                    continue
+                                presets[mode_key][param] = value if param != "c_value" else int(value)
+                legacy_defaults = {
+                    "aql": loaded.get("default_aql"),
+                    "ltpd": loaded.get("default_ltpd"),
+                    "alpha": loaded.get("default_alpha"),
+                    "beta": loaded.get("default_beta"),
+                    "c_value": loaded.get("default_c_value")
+                }
+                if any(value is not None for value in legacy_defaults.values()):
+                    standard = presets.get("standard", {}).copy()
+                    try:
+                        if legacy_defaults["aql"] is not None:
+                            standard["aql"] = float(legacy_defaults["aql"])
+                        if legacy_defaults["ltpd"] is not None:
+                            standard["ltpd"] = float(legacy_defaults["ltpd"])
+                        if legacy_defaults["alpha"] is not None:
+                            standard["alpha"] = float(legacy_defaults["alpha"])
+                        if legacy_defaults["beta"] is not None:
+                            standard["beta"] = float(legacy_defaults["beta"])
+                        if legacy_defaults["c_value"] is not None:
+                            standard["c_value"] = int(legacy_defaults["c_value"])
+                    except (TypeError, ValueError):
+                        pass
+                    else:
+                        presets["standard"] = standard
+                merged["inspection_presets"] = presets
+                merged["inspection_mode"] = self._normalize_mode_key(
+                    merged.get("inspection_mode", self.DEFAULT_CONFIG["inspection_mode"])
+                )
+                return merged
+
+            defaults = deepcopy(self.DEFAULT_CONFIG)
             defaults["inspection_mode"] = self._normalize_mode_key(defaults["inspection_mode"])
             return defaults
         except Exception as exc:
             print(f"設定ファイルの読み込みエラー: {exc}")
-            defaults = self.DEFAULT_CONFIG.copy()
+            defaults = deepcopy(self.DEFAULT_CONFIG)
             defaults["inspection_mode"] = self._normalize_mode_key(defaults["inspection_mode"])
             return defaults
 
@@ -94,6 +145,9 @@ class ConfigManager:
             print(f"設定ファイルの保存エラー: {exc}")
             return False
 
+    # ------------------------------------------------------------------
+    # データベースパス関連
+    # ------------------------------------------------------------------
     def get_database_path(self):
         """データベースパスの取得"""
         db_path = self.config.get("database_path", self.DEFAULT_CONFIG["database_path"])
@@ -141,7 +195,7 @@ class ConfigManager:
         return self.save_config()
 
     def select_database_file(self, parent_window=None):
-        """データベースファイルの選択ダイアログ"""
+        """データベースファイルの参照"""
         try:
             current_path = self.get_database_path()
             initial_dir = os.path.dirname(current_path) if os.path.dirname(current_path) else os.getcwd()
@@ -175,6 +229,9 @@ class ConfigManager:
             messagebox.showerror("エラー", f"ファイル選択中にエラーが発生しました:\n{sanitized_error}")
             return None
 
+    # ------------------------------------------------------------------
+    # 一般設定値の取得・保存
+    # ------------------------------------------------------------------
     def get(self, key, default=None):
         """設定値の取得"""
         return self.config.get(key, default)
@@ -186,10 +243,13 @@ class ConfigManager:
 
     def reset_to_defaults(self):
         """設定をデフォルトにリセット"""
-        self.config = self.DEFAULT_CONFIG.copy()
+        self.config = deepcopy(self.DEFAULT_CONFIG)
         self.config["inspection_mode"] = self._normalize_mode_key(self.config["inspection_mode"])
         self.save_config()
 
+    # ------------------------------------------------------------------
+    # 検査区分関連
+    # ------------------------------------------------------------------
     def get_inspection_mode(self):
         """現在の検査区分キーを取得"""
         return self._normalize_mode_key(self.config.get("inspection_mode"))
@@ -197,41 +257,107 @@ class ConfigManager:
     def get_inspection_mode_label(self, mode_key=None):
         """検査区分キーに対応する表示名を取得"""
         key = self._normalize_mode_key(mode_key or self.get_inspection_mode())
-        return self.INSPECTION_MODES[key]["label"]
+        return INSPECTION_MODE_META[key]["label"]
 
     def get_inspection_mode_choices(self):
         """検査区分選択肢を取得 (key -> label)"""
-        return {key: preset["label"] for key, preset in self.INSPECTION_MODES.items()}
+        return {key: meta["label"] for key, meta in INSPECTION_MODE_META.items()}
 
     def get_inspection_mode_details(self, mode_key=None):
         """検査区分の詳細情報を取得"""
         key = self._normalize_mode_key(mode_key or self.get_inspection_mode())
-        return self.INSPECTION_MODES[key].copy()
+        details = deepcopy(INSPECTION_MODE_META[key])
+        preset = deepcopy(self.config.get("inspection_presets", {}).get(key, {}))
+        defaults = DEFAULT_PRESETS.get(key, {})
+        for param in ["aql", "ltpd", "alpha", "beta", "c_value"]:
+            details[param] = preset.get(param, defaults.get(param))
+        return details
 
     def apply_inspection_mode(self, mode_key, persist=True):
         """検査区分プリセットを適用し、必要に応じて設定へ保存"""
         normalized_key = self._normalize_mode_key(mode_key)
-        preset = self.INSPECTION_MODES[normalized_key]
 
         if persist:
             self.config["inspection_mode"] = normalized_key
-            self.config["default_aql"] = preset["aql"]
-            self.config["default_ltpd"] = preset["ltpd"]
-            self.config["default_alpha"] = preset["alpha"]
-            self.config["default_beta"] = preset["beta"]
-            self.config["default_c_value"] = preset["c_value"]
+            self._sync_legacy_defaults(normalized_key)
             self.save_config()
 
-        return preset.copy()
+        return self.get_inspection_mode_details(normalized_key)
 
+    def set_inspection_preset(self, mode_key, *, aql, ltpd, alpha, beta, c_value):
+        """検査区分ごとのプリセット値を更新"""
+        normalized_key = self._normalize_mode_key(mode_key)
+        presets = self.config.setdefault("inspection_presets", deepcopy(DEFAULT_PRESETS))
+        presets[normalized_key] = {
+            "aql": float(aql),
+            "ltpd": float(ltpd),
+            "alpha": float(alpha),
+            "beta": float(beta),
+            "c_value": int(c_value)
+        }
+        if normalized_key == self.get_inspection_mode():
+            self._sync_legacy_defaults(normalized_key)
+        self.save_config()
+
+    # ------------------------------------------------------------------
+    # 内部ユーティリティ
+    # ------------------------------------------------------------------
     def _normalize_mode_key(self, mode_key):
         """設定ファイル内の検査区分指定を内部キーへ正規化"""
-        if mode_key in self.INSPECTION_MODES:
+        if mode_key in INSPECTION_MODE_META:
             return mode_key
 
         if isinstance(mode_key, str):
-            for key, preset in self.INSPECTION_MODES.items():
-                if preset["label"] == mode_key:
+            for key, meta in INSPECTION_MODE_META.items():
+                if meta["label"] == mode_key:
                     return key
 
         return "standard"
+
+    def _sync_legacy_defaults_for_startup(self):
+        """アプリ起動時：各検査区分の設定値を常にデフォルト値に固定"""
+        if not isinstance(self.config, dict):
+            return
+
+        # 標準検査の値を取得
+        standard_details = DEFAULT_PRESETS.get("standard", {})
+
+        # default_*項目を標準検査の値に更新
+        for param in ["aql", "ltpd", "alpha", "beta", "c_value"]:
+            legacy_key = f"default_{param if param != 'c_value' else 'c_value'}"
+            if legacy_key in self.config:
+                self.config[legacy_key] = standard_details.get(param)
+
+        # 各検査区分の設定値を常にデフォルト値に固定
+        self.config["inspection_presets"] = deepcopy(DEFAULT_PRESETS)
+
+    def _sync_legacy_defaults(self, mode_key=None):
+        """旧default_*項目を現在の検査区分パラメータに合わせる（検査区分の設定値は保持）"""
+        if not isinstance(self.config, dict):
+            return
+
+        active_key = self._normalize_mode_key(mode_key or self.config.get("inspection_mode"))
+        try:
+            details = self.get_inspection_mode_details(active_key)
+        except Exception:
+            details = DEFAULT_PRESETS.get(active_key, DEFAULT_PRESETS.get("standard", {}))
+
+        # 検査区分の設定値は上書きせず、default_*項目のみ更新
+        for param in ["aql", "ltpd", "alpha", "beta", "c_value"]:
+            legacy_key = f"default_{param if param != 'c_value' else 'c_value'}"
+            if legacy_key in self.config:
+                self.config[legacy_key] = details.get(param)
+
+        # inspection_presetsが存在しない場合のみデフォルト値を設定
+        if "inspection_presets" not in self.config:
+            self.config["inspection_presets"] = deepcopy(DEFAULT_PRESETS)
+        else:
+            # 既存のinspection_presetsの各検査区分の設定値は保持し、不足分のみデフォルト値を補完
+            for mode, default_values in DEFAULT_PRESETS.items():
+                if mode not in self.config["inspection_presets"]:
+                    self.config["inspection_presets"][mode] = default_values.copy()
+                else:
+                    # 既存の設定値は保持し、不足しているパラメータのみデフォルト値を補完
+                    for param, default_value in default_values.items():
+                        if param not in self.config["inspection_presets"][mode]:
+                            self.config["inspection_presets"][mode][param] = default_value
