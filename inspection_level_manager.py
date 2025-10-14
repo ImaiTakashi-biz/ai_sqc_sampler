@@ -27,7 +27,7 @@ class InspectionLevelManager:
             },
             "tightened_to_normal": {
                 "condition": "連続5ロットが合格",
-                "description": "品質が改善されたため通常検査に復帰"
+                "description": "品質が改善されたため標準検査に復帰"
             },
             "normal_to_reduced": {
                 "condition": "連続10ロットが合格 かつ 生産者品質が良好",
@@ -35,7 +35,7 @@ class InspectionLevelManager:
             },
             "reduced_to_normal": {
                 "condition": "1ロットが不合格 または 品質が不安定",
-                "description": "品質に問題が生じたため通常検査に復帰"
+                "description": "品質に問題が生じたため標準検査に復帰"
             }
         }
     
@@ -266,8 +266,7 @@ class InspectionLevelManager:
         text += "• 生産者と消費者の両方のリスクを適切に管理\n"
         text += "• 各検査区分のデフォルト値は設定画面で変更可能です"
         
-        return text
-    
+        return text    
     def _get_mode_key_from_level(self, level):
         """検査水準から検査区分キーを取得"""
         mapping = {
@@ -289,4 +288,3 @@ class InspectionLevelManager:
             text += f"{i}. {date}: {status}\n"
         
         return text
-

@@ -314,7 +314,7 @@ class App(tk.Tk):
         self.section_label.pack_forget()
 
         self.export_frame = tk.Frame(self.sampling_frame, bg=self.LIGHT_GRAY)
-        self.export_button = tk.Button(self.export_frame, text="📄 結果をテキストファイルに保存", command=self.controller.export_results, font=(self.FONT_FAMILY, self.FONT_SIZE_SMALL), bg=self.INFO_GREEN, fg="#ffffff", relief="flat", padx=15, pady=5, cursor="hand2", activebackground=self.ACCENT_BLUE)
+        self.export_button = tk.Button(self.export_frame, text="📄 レポート出力", command=self.controller.export_results, font=(self.FONT_FAMILY, self.FONT_SIZE_SMALL), bg=self.INFO_GREEN, fg="#ffffff", relief="flat", padx=15, pady=5, cursor="hand2", activebackground=self.ACCENT_BLUE)
         self.export_button.pack()
         self.export_frame.pack_forget()
 

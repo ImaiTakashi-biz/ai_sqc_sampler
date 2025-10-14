@@ -171,8 +171,8 @@ class MainController:
         self.product_list_manager.show_product_numbers_list()
 
     def export_results(self):
-        """結果のエクスポート"""
-        self.export_manager.export_results()
+        """結果のエクスポート（拡張版）"""
+        self.export_manager.show_export_dialog()
 
     def on_inspection_mode_change(self, mode_key):
         """検査区分変更時の処理"""

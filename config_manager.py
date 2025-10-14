@@ -12,7 +12,6 @@ from security_manager import SecurityManager
 
 
 # 検査区分の定義
-# 各検査区分は設定画面でAQL、LTPD、α、β、c値を個別に設定可能
 INSPECTION_MODE_META = {
     "tightened": {
         "label": "強化",
@@ -29,7 +28,6 @@ INSPECTION_MODE_META = {
 }
 
 # 各検査区分のデフォルト値
-# ユーザーは設定画面でこれらの値を変更可能
 DEFAULT_PRESETS = {
     "tightened": {"aql": 0.10, "ltpd": 0.50, "alpha": 3.0, "beta": 5.0, "c_value": 0},
     "standard": {"aql": 0.25, "ltpd": 1.0, "alpha": 5.0, "beta": 10.0, "c_value": 0},
