@@ -47,6 +47,9 @@ class MainController:
             self.oc_curve_manager = OCCurveManager()
             self.inspection_level_manager = InspectionLevelManager()
             
+            # メモリ最適化のスケジュール状態を追跡
+            self._memory_optimization_scheduled = False
+            
             # 結果データの保存用
             self.last_db_data = None
             self.last_stats_results = None
@@ -69,20 +72,36 @@ class MainController:
     
     def _schedule_memory_optimization(self):
         """メモリ最適化の定期実行をスケジュール"""
+        if self._memory_optimization_scheduled:
+            return  # 既にスケジュール済みの場合は何もしない
+            
         def optimize_memory():
             try:
+                if not self._memory_optimization_scheduled:
+                    return  # スケジュールがキャンセルされている場合は実行しない
+                    
                 memory_manager.optimize_memory()
-                # 5分後に再実行
-                self.app.after(300000, optimize_memory)
+                
+                # 5分後に再実行をスケジュール（状態を確認してから）
+                if self._memory_optimization_scheduled:
+                    self.app.after(300000, optimize_memory)
+                    
             except Exception as e:
                 error_handler.handle_error(ErrorCode.SYSTEM_ERROR, e)
+                # エラーが発生した場合も再スケジュールを試行
+                if self._memory_optimization_scheduled:
+                    self.app.after(300000, optimize_memory)
         
         # 初回実行を5分後にスケジュール
+        self._memory_optimization_scheduled = True
         self.app.after(300000, optimize_memory)
     
     def _cleanup_resources(self):
         """リソースのクリーンアップ"""
         try:
+            # メモリ最適化のスケジュールを停止
+            self._memory_optimization_scheduled = False
+            
             # データベース接続のクローズ
             if hasattr(self, 'db_manager'):
                 self.db_manager.close_all_connections()
@@ -215,8 +234,8 @@ class MainController:
         self.product_list_manager.show_product_numbers_list()
 
     def export_results(self):
-        """結果のエクスポート（拡張版）"""
-        self.export_manager.show_export_dialog()
+        """結果のエクスポート"""
+        self.export_manager.export_results()
 
     def on_inspection_mode_change(self, mode_key):
         """検査区分変更時の処理"""

@@ -3,7 +3,6 @@
 検査水準と計算関連の定数を定義
 """
 
-import re
 from datetime import datetime
 
 
@@ -52,10 +51,6 @@ class InspectionConstants:
     # 品番関連
     MAX_PRODUCT_NUMBER_LENGTH = 50  # 品番の最大長
     MIN_RECOMMENDED_LOT_SIZE = 10   # 推奨最小ロットサイズ
-    
-    # 入力値検証用の正規表現
-    PRODUCT_NUMBER_PATTERN = r'^[A-Za-z0-9\-_]+$'  # 品番の形式
-    INVALID_CHARS = ['<', '>', ':', '"', '|', '?', '*', '\\', '/']  # 無効な文字
     
     @staticmethod
     def get_inspection_level(defect_rate):

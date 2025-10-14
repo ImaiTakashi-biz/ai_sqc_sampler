@@ -63,18 +63,6 @@ class InspectionLevelManager:
         
         return current_level
     
-    def get_sample_size_adjustment(self, base_sample_size, inspection_level):
-        """検査水準に応じた抜取数の調整（非推奨：AQL/LTPD設計を使用）"""
-        # 注意：この機能は非推奨です。AQL/LTPD設計による統計計算を使用してください。
-        # この機能は後方互換性のために残されています。
-        adjustments = {
-            InspectionLevel.NORMAL: 1.0,      # 基準値
-            InspectionLevel.TIGHTENED: 1.0,   # 調整なし（AQL/LTPD設計に委ねる）
-            InspectionLevel.REDUCED: 1.0      # 調整なし（AQL/LTPD設計に委ねる）
-        }
-        
-        return int(base_sample_size * adjustments.get(inspection_level, 1.0))
-    
     def create_inspection_level_dialog(self, parent, current_level, recent_results, config_manager=None):
         """検査水準管理ダイアログの作成（運用管理用）"""
         dialog = tk.Toplevel(parent)

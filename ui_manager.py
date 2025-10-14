@@ -181,10 +181,6 @@ class UIManager:
 
         }
 
-        
-
-        # 従来のテキスト形式も保持（後方互換性のため）
-
         if has_adjustment:
 
             review_text = (

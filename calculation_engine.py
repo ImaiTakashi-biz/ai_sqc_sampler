@@ -44,11 +44,6 @@ INSPECTION_COMMENT_PRESETS = {
 INSPECTION_COMMENT_BY_LABEL = {
     preset["label"]: preset for preset in INSPECTION_COMMENT_PRESETS.values()
 }
-
-
-INSPECTION_COMMENT_BY_LABEL = {
-    preset["label"]: preset for preset in INSPECTION_COMMENT_PRESETS.values()
-}
 _DEFECT_SUM_SQL = ", ".join(
     f"SUM(IIF([{col}] IS NOT NULL AND [{col}]<>0, [{col}], 0))" for col in DEFECT_COLUMNS
 )
