@@ -230,6 +230,7 @@ class App(tk.Tk):
             "【このツールの計算方法】\n"
             "本ツールは統計的品質管理（SQC）のAQL/LTPD設計を基盤としたハイブリッド方式を採用しています。\n"
             "ロットサイズに応じて抜取数を動的調整：小ロットは高割合抜取、中・大ロットは有限母集団補正により実務運用を最適化します。\n"
+            "※有限母集団補正＝ロット全体が限られた数であることを踏まえ、「実績データ＋統計理論」から過不足のない抜取数に調整する仕組み。"
         )
         tk.Label(summary_frame, text=summary_text, fg=self.DARK_GRAY, bg=self.LIGHT_GRAY, font=(self.FONT_FAMILY, self.FONT_SIZE_SMALL), wraplength=950, anchor='w', justify='left', padx=self.PADDING_X_SMALL, pady=self.PADDING_Y_SMALL).pack(fill='x')  # パディング削減
 
