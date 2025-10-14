@@ -7,6 +7,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
 import pyodbc
+from error_handler import error_handler, ErrorCode
 from security_manager import SecurityManager
 
 
@@ -77,16 +78,21 @@ class ProgressManager:
         thread.start()
 
     def calculation_worker(self, inputs):
-        """計算処理のワーカースレッド"""
+        """計算処理のワーカースレッド（接続プール対応）"""
         conn = None
         try:
             # ステータス更新
             self._set_status("1/4 データベースに接続中...")
             
-            # データベース接続
+            # データベース接続（接続プール使用）
             conn = self.db_manager.get_db_connection()
             if not conn:
-                raise ConnectionError("データベース接続に失敗しました")
+                error_handler.handle_error(
+                    ErrorCode.DB_CONNECTION_FAILED, 
+                    Exception("データベース接続に失敗しました")
+                )
+                self.app.after(0, self.finish_calculation, False)
+                return
             
             with conn.cursor() as cursor:
                 # ステータス更新
@@ -108,38 +114,25 @@ class ProgressManager:
             self.app.after(0, self.ui_manager.update_ui, db_data, stats_results, inputs)
             self.app.after(0, self.finish_calculation, True, db_data, stats_results, inputs)
             
-        except ConnectionError as e:
-            self.app.after(0, self.finish_calculation, False)
-            
         except pyodbc.Error as e:
-            sanitized_error = self.security_manager.sanitize_error_message(str(e))
-            error_msg = f"データベースエラー: {sanitized_error}"
-            self.app.after(0, lambda: messagebox.showerror("データベースエラー", error_msg))
+            error_handler.handle_error(ErrorCode.DB_QUERY_FAILED, e)
             self.app.after(0, self.finish_calculation, False)
             
         except ValueError as e:
-            sanitized_error = self.security_manager.sanitize_error_message(str(e))
-            error_msg = f"計算エラー: {sanitized_error}"
-            self.app.after(0, lambda: messagebox.showerror("計算エラー", error_msg))
+            error_handler.handle_error(ErrorCode.CALCULATION_ERROR, e)
             self.app.after(0, self.finish_calculation, False)
             
         except OverflowError as e:
-            sanitized_error = self.security_manager.sanitize_error_message(str(e))
-            error_msg = f"計算範囲エラー: {sanitized_error}"
-            self.app.after(0, lambda: messagebox.showerror("計算範囲エラー", error_msg))
+            error_handler.handle_error(ErrorCode.CALCULATION_OVERFLOW, e)
             self.app.after(0, self.finish_calculation, False)
             
         except Exception as e:
-            sanitized_error = self.security_manager.sanitize_error_message(str(e))
-            error_msg = f"予期しないエラー: {sanitized_error}"
-            self.app.after(0, lambda: messagebox.showerror("システムエラー", error_msg))
+            error_handler.handle_error(ErrorCode.SYSTEM_ERROR, e)
             self.app.after(0, self.finish_calculation, False)
         finally:
+            # 接続をプールに返却
             if conn:
-                try:
-                    conn.close()
-                except pyodbc.Error:
-                    pass
+                self.db_manager.return_db_connection(conn)
 
     def finish_calculation(self, success, db_data=None, stats_results=None, inputs=None):
         """計算完了処理"""

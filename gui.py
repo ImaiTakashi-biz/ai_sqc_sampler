@@ -187,24 +187,37 @@ class App(tk.Tk):
         main_frame.bind('<Configure>', on_frame_configure)
         main_canvas.bind('<Configure>', lambda e: on_frame_configure(e))
 
+        # マウスホイールスクロール機能
+        def handle_mousewheel(event):
+            # メインウィンドウ上でのスクロールのみ処理
+            if event.widget.winfo_toplevel() is self:
+                if platform.system() == 'Windows':
+                    main_canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
+                else:
+                    if event.num == 4:
+                        main_canvas.yview_scroll(-1, 'units')
+                    elif event.num == 5:
+                        main_canvas.yview_scroll(1, 'units')
+        
+        # マウスホイールイベントのバインド
         if platform.system() == 'Windows':
-            def handle_mousewheel(event):
-                # ダイアログ上でのスクロール時にメイン画面まで動かないように制御
-                if event.widget.winfo_toplevel() is not self:
-                    return
-                main_canvas.yview_scroll(int(-1 * (event.delta / 120)), 'units')
             main_canvas.bind_all('<MouseWheel>', handle_mousewheel)
         else:
-            def handle_wheel_up(event):
-                if event.widget.winfo_toplevel() is not self:
-                    return
-                main_canvas.yview_scroll(-1, 'units')
-            def handle_wheel_down(event):
-                if event.widget.winfo_toplevel() is not self:
-                    return
-                main_canvas.yview_scroll(1, 'units')
-            main_canvas.bind_all('<Button-4>', handle_wheel_up)
-            main_canvas.bind_all('<Button-5>', handle_wheel_down)
+            main_canvas.bind_all('<Button-4>', handle_mousewheel)
+            main_canvas.bind_all('<Button-5>', handle_mousewheel)
+        
+        # キャンバスにフォーカスを設定してマウスホイールイベントを受け取れるようにする
+        main_canvas.bind('<Enter>', lambda e: main_canvas.focus_set())
+        main_canvas.bind('<Leave>', lambda e: self.focus_set())
+        
+        # メインフレーム全体でもマウスホイールイベントを受け取れるようにする
+        main_frame.bind('<Enter>', lambda e: main_canvas.focus_set())
+        
+        # ウィンドウ全体でマウスホイールイベントを処理
+        self.bind('<MouseWheel>', handle_mousewheel)
+        if platform.system() != 'Windows':
+            self.bind('<Button-4>', handle_mousewheel)
+            self.bind('<Button-5>', handle_mousewheel)
 
         header_frame = tk.Frame(main_frame, bg=self.PRIMARY_BLUE, height=60)  # 80→60に削減
         header_frame.pack(fill='x', pady=(self.PADDING_Y_SMALL, self.PADDING_Y_SMALL))  # 上部パディング削減

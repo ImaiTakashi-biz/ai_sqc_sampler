@@ -23,35 +23,79 @@ from export_manager import ExportManager
 from oc_curve_manager import OCCurveManager
 from inspection_level_manager import InspectionLevelManager
 from security_manager import SecurityManager
+from error_handler import error_handler, ErrorCode
+from memory_manager import memory_manager
 
 
 class MainController:
     """メインアプリケーションコントローラー"""
     
     def __init__(self):
-        # 基本コンポーネントの初期化
-        self.config_manager = ConfigManager()
-        self.security_manager = SecurityManager()
-        self.db_manager = DatabaseManager(self.config_manager)
-        self.app = App(self)
-        
-        # 各マネージャーの初期化
-        self.calculation_engine = CalculationEngine(self.db_manager)
-        self.ui_manager = UIManager(self.app)
-        self.progress_manager = ProgressManager(self.app, self.db_manager, self.calculation_engine, self.ui_manager)
-        self.product_list_manager = ProductListManager(self.app, self.db_manager)
-        self.export_manager = ExportManager(self.app)
-        self.oc_curve_manager = OCCurveManager()
-        self.inspection_level_manager = InspectionLevelManager()
-        
-        # 結果データの保存用
-        self.last_db_data = None
-        self.last_stats_results = None
-        self.last_inputs = None
+        try:
+            # 基本コンポーネントの初期化
+            self.config_manager = ConfigManager()
+            self.security_manager = SecurityManager()
+            self.db_manager = DatabaseManager(self.config_manager)
+            self.app = App(self)
+            
+            # 各マネージャーの初期化
+            self.calculation_engine = CalculationEngine(self.db_manager)
+            self.ui_manager = UIManager(self.app)
+            self.progress_manager = ProgressManager(self.app, self.db_manager, self.calculation_engine, self.ui_manager)
+            self.product_list_manager = ProductListManager(self.app, self.db_manager)
+            self.export_manager = ExportManager(self.app)
+            self.oc_curve_manager = OCCurveManager()
+            self.inspection_level_manager = InspectionLevelManager()
+            
+            # 結果データの保存用
+            self.last_db_data = None
+            self.last_stats_results = None
+            self.last_inputs = None
+            
+            # メモリ最適化の定期実行
+            self._schedule_memory_optimization()
+            
+        except Exception as e:
+            error_handler.handle_error(ErrorCode.SYSTEM_ERROR, e)
+            raise
 
     def run(self):
         """アプリケーションの実行"""
-        self.app.mainloop()
+        try:
+            self.app.mainloop()
+        finally:
+            # アプリケーション終了時のクリーンアップ
+            self._cleanup_resources()
+    
+    def _schedule_memory_optimization(self):
+        """メモリ最適化の定期実行をスケジュール"""
+        def optimize_memory():
+            try:
+                memory_manager.optimize_memory()
+                # 5分後に再実行
+                self.app.after(300000, optimize_memory)
+            except Exception as e:
+                error_handler.handle_error(ErrorCode.SYSTEM_ERROR, e)
+        
+        # 初回実行を5分後にスケジュール
+        self.app.after(300000, optimize_memory)
+    
+    def _cleanup_resources(self):
+        """リソースのクリーンアップ"""
+        try:
+            # データベース接続のクローズ
+            if hasattr(self, 'db_manager'):
+                self.db_manager.close_all_connections()
+            
+            # メモリキャッシュのクリア
+            memory_manager.clear_cache()
+            
+            # ガベージコレクションの実行
+            import gc
+            gc.collect()
+            
+        except Exception as e:
+            error_handler.handle_error(ErrorCode.SYSTEM_ERROR, e)
 
     def start_calculation_thread(self):
         """計算処理を別スレッドで開始"""

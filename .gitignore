@@ -1,5 +1,12 @@
 .venv/
-__pycache__
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
 *.accdb
 *.json
+*.log
+error.log
+memory.log
 security.log
