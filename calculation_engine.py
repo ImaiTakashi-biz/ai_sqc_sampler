@@ -214,6 +214,7 @@ class CalculationEngine:
             warning_message = warning_message or n_sample
             n_sample = lot_size
 
+        # 統計計算結果を尊重し、過度な最小値強制適用を回避
         ratio_baseline = {
             'tightened': 0.60,
             'standard': 0.40,
@@ -223,12 +224,14 @@ class CalculationEngine:
             minimum = max(1, math.ceil(lot_size * ratio_baseline[active_mode_key]))
             if minimum > lot_size:
                 minimum = lot_size
-            if n_sample < minimum:
+            # 統計計算結果が極端に小さい場合（5%未満）のみ最小値適用
+            if n_sample < minimum and n_sample < lot_size * 0.05:
                 n_sample = minimum
+        # 最大値制限も統計計算を尊重して調整
         max_ratio_map = {
-            'tightened': 0.90,
-            'standard': 0.70,
-            'reduced': 0.35
+            'tightened': 0.50,  # 50%に制限（実用的な上限）
+            'standard': 0.30,  # 30%に制限（実用的な上限）
+            'reduced': 0.20   # 20%に制限（実用的な上限）
         }
         if isinstance(n_sample, int) and active_mode_key in max_ratio_map:
             maximum = math.ceil(lot_size * max_ratio_map[active_mode_key])
@@ -376,15 +379,16 @@ class CalculationEngine:
             mid = (low + high) // 2
             
             # 有限母集団補正を考慮した確率計算（改善版）
-            # より厳密な判定基準：n/N > 0.05 または n > 50 の場合に超幾何分布を使用
-            use_hypergeometric = (mid / lot_size > 0.05) or (mid > 50)
+            # より厳密な判定基準：n/N > 0.1 または n > 50 の場合に超幾何分布を使用
+            use_hypergeometric = (mid / lot_size > 0.1) or (mid > 50)
             
             if use_hypergeometric:
                 # 超幾何分布での確率計算（期待不良数が0にならないよう調整）
                 defect_count_aql = max(1, round(lot_size * aql_p))
                 defect_count_ltpd = max(1, round(lot_size * ltpd_p))
-                paql = self._hypergeometric_probability(mid, c_value, lot_size, defect_count_aql)
-                pltpd = self._hypergeometric_probability(mid, c_value, lot_size, defect_count_ltpd)
+                # 正しい引数順序: (抜取数, 不良数, 母集団数, 許容不良数)
+                paql = self._hypergeometric_probability(mid, defect_count_aql, lot_size, c_value)
+                pltpd = self._hypergeometric_probability(mid, defect_count_ltpd, lot_size, c_value)
             else:
                 # 二項分布での確率計算
                 paql = _cached_binom_cdf(c_value, mid, aql_p)
@@ -414,6 +418,8 @@ class CalculationEngine:
             return 0.0
         
         try:
+            # 正しいパラメータ順序: (k, M, n, N)
+            # k: 許容不良数, M: 母集団数, n: 不良数, N: 抜取数
             return _cached_hypergeom_cdf(c, N, D, n)
         except:
             return 0.0
@@ -430,7 +436,7 @@ class CalculationEngine:
             p = p_percent / 100.0
             
             # 有限母集団補正の判定（改善版）
-            use_hypergeometric = (n_sample / lot_size > 0.05) or (n_sample > 50)
+            use_hypergeometric = (n_sample / lot_size > 0.1) or (n_sample > 50)
             
             if use_hypergeometric:  # 超幾何分布
                 prob = self._hypergeometric_probability(n_sample, int(lot_size * p), lot_size, c_value)
