@@ -36,6 +36,13 @@ class UIManager:
 
         self.clear_previous_results()
 
+        # 不具合データがない場合の特別処理
+        if stats_results.get('no_defect_data', False):
+            self.display_no_defect_data_message(stats_results, inputs)
+            if hasattr(self.app, 'show_export_button'):
+                self.app.show_export_button()
+            return
+
         texts = self.generate_result_texts(db_data, stats_results, inputs)
 
         self.display_main_results(stats_results, texts['advice'], texts['best5'], inputs.get('product_number', ''))
@@ -325,6 +332,80 @@ class UIManager:
         tk.Label(frame, text=review_data['calculation_note'], font=("Meiryo", 9), fg="#6c757d", bg=review_bg, anchor='w', justify='left').pack(fill='x', padx=12, pady=(5, 10))
 
         self.app.review_table_frame = frame
+
+    def display_no_defect_data_message(self, stats_results, inputs):
+        """不具合データがない場合のメッセージ表示"""
+        
+        # 1. セクション区切りとタイトルを表示
+        if hasattr(self.app, 'section_divider'):
+            self.app.section_divider.pack(fill='x', pady=(20, 8))
+        if hasattr(self.app, 'section_label'):
+            self.app.section_label.pack(pady=(0, 15))
+        
+        # 品番の表示
+        product_number = inputs.get('product_number', '')
+        if hasattr(self.app, 'product_label'):
+            self.app.product_label.destroy()
+        
+        self.app.product_label = tk.Label(
+            self.app.sampling_frame,
+            text=f"品番: {product_number}",
+            font=("Meiryo", 18, "bold"),
+            fg="#2c3e50",
+            bg=self.app.LIGHT_GRAY,
+            pady=5
+        )
+        self.app.product_label.pack(pady=(0, 10))
+        
+        # 全数検査の表示
+        lot_size = inputs.get('lot_size', 1000)
+        sample_size_disp = self.format_int(lot_size)
+        
+        self.app.main_sample_label = tk.Label(
+            self.app.sampling_frame, 
+            text=f"全数検査: {sample_size_disp} 個", 
+            font=("Meiryo", 32, "bold"), 
+            fg="#dc3545",  # 赤色で警告表示
+            bg=self.app.LIGHT_GRAY, 
+            pady=10
+        )
+        self.app.main_sample_label.pack(pady=(0, 15))
+        
+        # 警告メッセージの表示
+        self.app.level_label = tk.Label(
+            self.app.sampling_frame,
+            text="⚠️ 不具合データ（実績）がありません",
+            font=("Meiryo", 16, "bold"),
+            fg="#dc3545",
+            bg=self.app.LIGHT_GRAY,
+            pady=5
+        )
+        self.app.level_label.pack(pady=(0, 10))
+        
+        # 推奨理由の表示
+        self.app.reason_label = tk.Label(
+            self.app.sampling_frame,
+            text=stats_results.get('comment', ''),
+            font=("Meiryo", 12),
+            fg="#6c757d",
+            bg=self.app.LIGHT_GRAY,
+            wraplength=600,
+            justify='left'
+        )
+        self.app.reason_label.pack(pady=(0, 15))
+        
+        # ガイダンスメッセージの表示
+        if 'guidance_message' in stats_results:
+            self.app.advice_label = tk.Label(
+                self.app.sampling_frame,
+                text=stats_results['guidance_message'],
+                font=("Meiryo", 11, "bold"),
+                fg="#dc3545",
+                bg=self.app.LIGHT_GRAY,
+                wraplength=600,
+                justify='left'
+            )
+            self.app.advice_label.pack(pady=(0, 15))
 
     def display_main_results(self, stats_results, advice_text, best5_text, product_number=''):
         """メイン結果の表示"""

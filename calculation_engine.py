@@ -135,6 +135,27 @@ class CalculationEngine:
         """AQL/LTPD設計に基づく統計計算（データベース実績活用版）"""
         results = {}
         
+        # 不具合データ（実績）がない場合の処理
+        if db_data['total_qty'] == 0 or db_data['total_defect'] == 0:
+            # 不具合データがない場合の特別処理
+            results['no_defect_data'] = True
+            results['inspection_recommendation'] = "全数検査"
+            results['comment'] = "不具合データ（実績）がありません。統計的抜取検査の根拠となる実績データが不足しているため、全数検査を推奨します。"
+            results['sample_size'] = inputs.get('lot_size', 1000)  # 全数検査
+            results['aql'] = inputs.get('aql', 0.25)
+            results['ltpd'] = inputs.get('ltpd', 1.0)
+            results['alpha'] = inputs.get('alpha', 5.0)
+            results['beta'] = inputs.get('beta', 10.0)
+            results['c_value'] = inputs.get('c_value', 0)
+            results['defect_rate'] = 0.0
+            results['total_qty'] = 0
+            results['total_defect'] = 0
+            results['best5'] = []
+            results['defect_rates_sorted'] = []
+            results['oc_curve_data'] = []
+            results['guidance_message'] = "実績データが不足しているため、統計的抜取検査ではなく全数検査を実施してください。"
+            return results
+        
         # AQL/LTPD設計のパラメータ取得
         aql = inputs.get('aql', 0.25)  # デフォルト0.25%
         ltpd = inputs.get('ltpd', 1.0)  # デフォルト1.0%
