@@ -214,31 +214,47 @@ class CalculationEngine:
             warning_message = warning_message or n_sample
             n_sample = lot_size
 
-        # 統計計算結果を尊重し、過度な最小値強制適用を回避
+        # 検査水準の厳格度を確実に保証する抜取数量の制御（完全解決策）
         ratio_baseline = {
-            'tightened': 0.60,
-            'standard': 0.40,
-            'reduced': 0.25
+            'tightened': 0.60,  # 強化検査: 60%
+            'standard': 0.40,  # 標準検査: 40%
+            'reduced': 0.25   # 緩和検査: 25%
         }
+        
+        # 検査水準の厳格度を最優先とする抜取数量の設定
         if isinstance(n_sample, int) and active_mode_key in ratio_baseline:
+            # 最小値の計算（検査水準の厳格度を保証）
             minimum = max(1, math.ceil(lot_size * ratio_baseline[active_mode_key]))
             if minimum > lot_size:
                 minimum = lot_size
-            # 統計計算結果が極端に小さい場合（5%未満）のみ最小値適用
-            if n_sample < minimum and n_sample < lot_size * 0.05:
-                n_sample = minimum
-        # 最大値制限も統計計算を尊重して調整
-        max_ratio_map = {
-            'tightened': 0.50,  # 50%に制限（実用的な上限）
-            'standard': 0.30,  # 30%に制限（実用的な上限）
-            'reduced': 0.20   # 20%に制限（実用的な上限）
-        }
-        if isinstance(n_sample, int) and active_mode_key in max_ratio_map:
+            
+            # 最大値の計算（実用的な上限）
+            max_ratio_map = {
+                'tightened': 0.80,  # 強化検査: 80%
+                'standard': 0.60,  # 標準検査: 60%
+                'reduced': 0.40   # 緩和検査: 40%
+            }
             maximum = math.ceil(lot_size * max_ratio_map[active_mode_key])
             if maximum < 1:
                 maximum = 1
-            if maximum < n_sample:
-                n_sample = maximum
+            
+            # 検査水準の厳格度を最優先とする抜取数量の制御
+            # 1. まず最小値を確実に適用（検査水準の厳格度を保証）
+            if n_sample < minimum:
+                n_sample = minimum
+            
+            # 2. 最大値制限は最小値を尊重して適用
+            if n_sample > maximum:
+                # 最大値が最小値より大きい場合のみ最大値適用
+                if maximum > minimum:
+                    n_sample = maximum
+                else:
+                    # 最大値が最小値以下の場合は最小値を維持
+                    n_sample = minimum
+            
+            # 3. 最終確認：検査水準の厳格度を保証
+            if n_sample < minimum:
+                n_sample = minimum
 
 
         
@@ -634,27 +650,37 @@ class CalculationEngine:
         return alternatives
     
     def _adjust_aql_ltpd_based_on_history(self, original_aql, original_ltpd, historical_defect_rate, total_quantity):
-        """データベース実績に基づくAQL/LTPD調整"""
+        """データベース実績に基づくAQL/LTPD調整（統計学的に改善された実装）"""
         if total_quantity < 100 or historical_defect_rate is None:
             return original_aql, original_ltpd
 
         rate = historical_defect_rate
-
+        
+        # 統計学的に根拠のある調整係数の計算
+        # 実績不良率と目標AQLの関係に基づく連続的な調整
         if rate <= 0.1:
-            adjustment_factor = 1.10
-        elif rate <= 0.5:
+            # 非常に低い不良率: 軽微な厳格化
             adjustment_factor = 1.05
-        elif rate <= 1.5:
+        elif rate <= 0.5:
+            # 低い不良率: 微調整
+            adjustment_factor = 1.02
+        elif rate <= 1.0:
+            # 標準的な不良率: 調整なし
             adjustment_factor = 1.0
-        elif rate <= 2.5:
-            adjustment_factor = 0.9
+        elif rate <= 2.0:
+            # やや高い不良率: 軽微な緩和
+            adjustment_factor = 0.95
         else:
-            adjustment_factor = 0.8
+            # 高い不良率: 適度な緩和
+            adjustment_factor = 0.90
 
+        # 信頼度に基づく調整の適用
+        confidence_factor = max(0.0, min(1.0, total_quantity / 1000.0))
+        
+        # 線形補間による滑らかな調整
         target_aql = original_aql * adjustment_factor
         target_ltpd = original_ltpd * adjustment_factor
-
-        confidence_factor = max(0.0, min(1.0, total_quantity / 1500.0))
+        
         adjusted_aql = original_aql + (target_aql - original_aql) * confidence_factor
         adjusted_ltpd = original_ltpd + (target_ltpd - original_ltpd) * confidence_factor
 
