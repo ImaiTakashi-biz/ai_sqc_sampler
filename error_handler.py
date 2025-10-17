@@ -3,8 +3,9 @@
 アプリケーション全体のエラー処理を統一管理
 """
 
-import logging
 import traceback
+import sys
+import os
 from enum import Enum
 from typing import Optional, Dict, Any
 from tkinter import messagebox
@@ -44,23 +45,8 @@ class ErrorHandler:
     
     def __init__(self):
         self.security_manager = SecurityManager()
-        self.logger = self._setup_logger()
         self._error_counts = {}
     
-    def _setup_logger(self):
-        """エラーログの設定"""
-        logger = logging.getLogger('error_handler')
-        logger.setLevel(logging.ERROR)
-        
-        if not logger.handlers:
-            handler = logging.FileHandler('error.log', encoding='utf-8')
-            formatter = logging.Formatter(
-                '%(asctime)s - %(levelname)s - %(message)s'
-            )
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-        
-        return logger
     
     def handle_error(self, 
                     error_code: ErrorCode, 
@@ -83,8 +69,8 @@ class ErrorHandler:
             # エラーカウントの更新
             self._error_counts[error_code] = self._error_counts.get(error_code, 0) + 1
             
-            # エラーログの記録
-            self._log_error(error_code, error, context)
+            # エラーログの記録（無効化）
+            # self._log_error(error_code, error, context)
             
             # セキュリティイベントの記録
             self.security_manager.log_security_event(
@@ -99,21 +85,14 @@ class ErrorHandler:
             return True
             
         except Exception as e:
-            # エラーハンドリング自体でエラーが発生した場合
-            self.logger.critical(f"Error handler failed: {str(e)}")
+            # エラーハンドリング自体でエラーが発生した場合（ログ機能無効化）
+            # self.logger.critical(f"Error handler failed: {str(e)}")
             return False
     
     def _log_error(self, error_code: ErrorCode, error: Exception, context: Optional[Dict[str, Any]]):
-        """エラーログの記録"""
-        error_info = {
-            'code': error_code.value,
-            'type': type(error).__name__,
-            'message': str(error),
-            'context': context or {},
-            'traceback': traceback.format_exc()
-        }
-        
-        self.logger.error(f"Error {error_code.value}: {error_info}")
+        """エラーログの記録（無効化）"""
+        # ログ機能を無効化
+        pass
     
     def _show_user_message(self, error_code: ErrorCode, error: Exception, context: Optional[Dict[str, Any]]):
         """ユーザー向けエラーメッセージの表示"""

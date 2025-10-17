@@ -1,12 +1,35 @@
+# Python
 .venv/
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
+
+# Database files
 *.accdb
 *.json
-*.log
-error.log
-memory.log
-security.log
+
+# PyInstaller build files
+build/
+dist/
+
+# PyInstaller generated files
+*.spec
+*.pkg
+*.toc
+*.pyz
+*.zip
+warn-*.txt
+xref-*.html
+
+# Executable files
+*.exe
+
+*.png
+AGENTS.md
+
+# Allow application icon assets
+!resources/
+!resources/*.png
+!resources/*.ico

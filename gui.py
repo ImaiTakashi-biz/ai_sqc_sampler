@@ -3,11 +3,15 @@ from tkinter import ttk
 from tkcalendar import DateEntry
 from datetime import datetime
 import platform
+import sys
+from pathlib import Path
 
 class App(tk.Tk):
     def __init__(self, controller):
         super().__init__()
         self.controller = controller
+        self._icon_image = None
+        self._initialize_window_icon()
 
         # --- 変数定義 ---
         self.result_var = tk.StringVar()
@@ -61,6 +65,32 @@ class App(tk.Tk):
         # --- ウィジェットの構築 ---
         self._create_widgets()
         self._bind_shortcuts()
+
+    def _resolve_resource_path(self, relative_path: str) -> Path | None:
+        """PyInstaller 環境でも参照可能なリソースパスを返す。"""
+        try:
+            base_path = getattr(sys, "_MEIPASS", None)
+            if base_path:
+                base_dir = Path(base_path)
+            else:
+                base_dir = Path(__file__).resolve().parent
+            candidate = base_dir / relative_path
+            if candidate.exists():
+                return candidate
+        except Exception:
+            return None
+        return None
+
+    def _initialize_window_icon(self) -> None:
+        """アプリケーションウィンドウのアイコンを設定。"""
+        icon_path = self._resolve_resource_path('resources/app_icon.png')
+        if not icon_path:
+            return
+        try:
+            self._icon_image = tk.PhotoImage(file=str(icon_path))
+            self.iconphoto(True, self._icon_image)
+        except Exception:
+            self._icon_image = None
 
     def _center_window(self):
         self.update_idletasks()

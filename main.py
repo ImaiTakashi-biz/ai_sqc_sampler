@@ -6,6 +6,7 @@ AI SQC Sampler - メインコントローラー
 from tkinter import messagebox, Toplevel, scrolledtext
 import tkinter as tk
 import os
+import sys
 import platform
 import subprocess
 import webbrowser
@@ -24,7 +25,7 @@ from oc_curve_manager import OCCurveManager
 from inspection_level_manager import InspectionLevelManager
 from security_manager import SecurityManager
 from error_handler import error_handler, ErrorCode
-from memory_manager import memory_manager
+# memory_manager import removed (logging disabled)
 
 
 class MainController:
@@ -47,16 +48,10 @@ class MainController:
             self.oc_curve_manager = OCCurveManager()
             self.inspection_level_manager = InspectionLevelManager()
             
-            # メモリ最適化のスケジュール状態を追跡
-            self._memory_optimization_scheduled = False
-            
             # 結果データの保存用
             self.last_db_data = None
             self.last_stats_results = None
             self.last_inputs = None
-            
-            # メモリ最適化の定期実行
-            self._schedule_memory_optimization()
             
         except Exception as e:
             error_handler.handle_error(ErrorCode.SYSTEM_ERROR, e)
@@ -70,44 +65,14 @@ class MainController:
             # アプリケーション終了時のクリーンアップ
             self._cleanup_resources()
     
-    def _schedule_memory_optimization(self):
-        """メモリ最適化の定期実行をスケジュール"""
-        if self._memory_optimization_scheduled:
-            return  # 既にスケジュール済みの場合は何もしない
-            
-        def optimize_memory():
-            try:
-                if not self._memory_optimization_scheduled:
-                    return  # スケジュールがキャンセルされている場合は実行しない
-                    
-                memory_manager.optimize_memory()
-                
-                # 5分後に再実行をスケジュール（状態を確認してから）
-                if self._memory_optimization_scheduled:
-                    self.app.after(300000, optimize_memory)
-                    
-            except Exception as e:
-                error_handler.handle_error(ErrorCode.SYSTEM_ERROR, e)
-                # エラーが発生した場合も再スケジュールを試行
-                if self._memory_optimization_scheduled:
-                    self.app.after(300000, optimize_memory)
-        
-        # 初回実行を5分後にスケジュール
-        self._memory_optimization_scheduled = True
-        self.app.after(300000, optimize_memory)
+# _schedule_memory_optimization method removed (logging disabled)
     
     def _cleanup_resources(self):
         """リソースのクリーンアップ"""
         try:
-            # メモリ最適化のスケジュールを停止
-            self._memory_optimization_scheduled = False
-            
             # データベース接続のクローズ
             if hasattr(self, 'db_manager'):
                 self.db_manager.close_all_connections()
-            
-            # メモリキャッシュのクリア
-            memory_manager.clear_cache()
             
             # ガベージコレクションの実行
             import gc
@@ -277,11 +242,17 @@ class MainController:
     def show_help(self):
         """ヘルプの表示（アプリケーション内でREADME内容を表示）"""
         try:
-            # READMEファイルのパスを取得
-            readme_path = Path(__file__).resolve().parent / "README.md"
+            # PyInstaller環境でのREADMEファイルのパスを取得
+            if getattr(sys, 'frozen', False):
+                # PyInstallerでビルドされた場合
+                base_path = sys._MEIPASS
+                readme_path = Path(base_path) / "README.md"
+            else:
+                # 開発環境の場合
+                readme_path = Path(__file__).resolve().parent / "README.md"
             
             if not readme_path.exists():
-                messagebox.showerror("エラー", f"READMEファイルが見つかりません。\nファイル: {readme_path.name}")
+                messagebox.showerror("エラー", f"READMEファイルが見つかりません。\nファイル: {readme_path}")
                 return
             
             # READMEファイルの内容を読み込み
@@ -539,26 +510,30 @@ class MainController:
     
     def show_oc_curve(self):
         """OCカーブの表示"""
-        if not hasattr(self, 'last_stats_results') or not self.last_stats_results:
-            messagebox.showinfo("情報", "先に計算を実行してください。")
-            return
-        
-        if 'oc_curve' not in self.last_stats_results:
-            messagebox.showinfo("情報", "OCカーブデータがありません。")
-            return
-        
-        # OCカーブダイアログの表示
-        self.oc_curve_manager.create_oc_curve_dialog(
-            self.app,
-            self.last_stats_results['oc_curve'],
-            self.last_inputs.get('aql', 0.25),
-            self.last_inputs.get('ltpd', 1.0),
-            self.last_inputs.get('alpha', 5.0),
-            self.last_inputs.get('beta', 10.0),
-            self.last_stats_results['sample_size'],
-            self.last_inputs.get('c_value', 0),
-            self.last_inputs.get('lot_size', 1000)
-        )
+        try:
+            if not hasattr(self, 'last_stats_results') or not self.last_stats_results:
+                messagebox.showinfo("情報", "先に計算を実行してください。")
+                return
+            
+            if 'oc_curve' not in self.last_stats_results:
+                messagebox.showinfo("情報", "OCカーブデータがありません。")
+                return
+            
+            # OCカーブダイアログの表示
+            self.oc_curve_manager.create_oc_curve_dialog(
+                self.app,
+                self.last_stats_results['oc_curve'],
+                self.last_inputs.get('aql', 0.25),
+                self.last_inputs.get('ltpd', 1.0),
+                self.last_inputs.get('alpha', 5.0),
+                self.last_inputs.get('beta', 10.0),
+                self.last_stats_results['sample_size'],
+                self.last_inputs.get('c_value', 0),
+                self.last_inputs.get('lot_size', 1000)
+            )
+        except Exception as e:
+            error_handler.handle_error(ErrorCode.SYSTEM_ERROR, e)
+            messagebox.showerror("エラー", f"OCカーブの表示中にエラーが発生しました:\n{str(e)}")
     
     def _get_inspection_level_from_mode_key(self, mode_key):
         """検査区分キーから検査水準を取得"""

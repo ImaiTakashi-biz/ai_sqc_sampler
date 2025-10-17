@@ -6,10 +6,45 @@ AQL/LTPD設計に基づく抜取検査計算
 
 import math
 from functools import lru_cache
+from typing import Any, Callable
 
 from constants import InspectionConstants, DEFECT_COLUMNS
 
 SAMPLE_SIZE_CACHE_LIMIT = 128
+OC_DEFECT_RATE_POINTS = (
+    0.0,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    1.5,
+    2.0,
+    3.0,
+    5.0,
+    10.0,
+)
+
+
+def _coerce_numeric_input(
+    inputs: dict,
+    key: str,
+    default: Any,
+    cast: Callable[[Any], Any],
+    min_value: float | None = None,
+    max_value: float | None = None,
+) -> Any:
+    """辞書から数値を安全に取り出し、型変換と範囲制限を行うヘルパー。"""
+    value = inputs.get(key, default)
+    try:
+        value = cast(value)
+    except (TypeError, ValueError):
+        value = cast(default)
+
+    if min_value is not None:
+        value = max(min_value, value)
+    if max_value is not None:
+        value = min(max_value, value)
+    return value
 
 INSPECTION_COMMENT_PRESETS = {
     "tightened": {
@@ -156,13 +191,22 @@ class CalculationEngine:
             results['guidance_message'] = "実績データが不足しているため、統計的抜取検査ではなく全数検査を実施してください。"
             return results
         
-        # AQL/LTPD設計のパラメータ取得
-        aql = inputs.get('aql', 0.25)  # デフォルト0.25%
-        ltpd = inputs.get('ltpd', 1.0)  # デフォルト1.0%
-        alpha = inputs.get('alpha', 5.0)  # デフォルト5%（生産者危険）
-        beta = inputs.get('beta', 10.0)  # デフォルト10%（消費者危険）
-        c_value = inputs.get('c_value', 0)
-        lot_size = inputs.get('lot_size', 1000)
+        # AQL/LTPD設計のパラメータ取得（安全に型変換）
+        aql = _coerce_numeric_input(inputs, 'aql', 0.25, float, 0.01, 10.0)
+        ltpd = _coerce_numeric_input(inputs, 'ltpd', 1.0, float, 0.1, 20.0)
+        alpha = _coerce_numeric_input(inputs, 'alpha', 5.0, float, 0.1, 100.0)
+        beta = _coerce_numeric_input(inputs, 'beta', 10.0, float, 0.1, 100.0)
+        c_value = _coerce_numeric_input(inputs, 'c_value', 0, int, 0)
+        lot_size = _coerce_numeric_input(inputs, 'lot_size', 1000, int, 1)
+
+        inputs.update({
+            'aql': aql,
+            'ltpd': ltpd,
+            'alpha': alpha,
+            'beta': beta,
+            'c_value': c_value,
+            'lot_size': lot_size
+        })
         
         # データベース実績に基づくAQL/LTPD調整
         adjusted_aql, adjusted_ltpd = self._adjust_aql_ltpd_based_on_history(
@@ -467,13 +511,9 @@ class CalculationEngine:
             return []
         
         oc_data = []
-        defect_rates = [0.0, 0.1, 0.25, 0.5, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0]  # 不良率（%）
-        
-        for p_percent in defect_rates:
+        use_hypergeometric = (n_sample / lot_size > 0.1) or (n_sample > 50)
+        for p_percent in OC_DEFECT_RATE_POINTS:
             p = p_percent / 100.0
-            
-            # 有限母集団補正の判定（改善版）
-            use_hypergeometric = (n_sample / lot_size > 0.1) or (n_sample > 50)
             
             if use_hypergeometric:  # 超幾何分布
                 prob = self._hypergeometric_probability(n_sample, int(lot_size * p), lot_size, c_value)
@@ -592,11 +632,11 @@ class CalculationEngine:
     def calculate_alternatives(self, db_data, inputs):
         """AQL/LTPD設計に基づく代替案の計算"""
         lot_size = inputs['lot_size']
-        current_aql = inputs.get('aql', 0.25)
-        current_ltpd = inputs.get('ltpd', 1.0)
-        current_alpha = inputs.get('alpha', 5.0)
-        current_beta = inputs.get('beta', 10.0)
-        current_c = inputs.get('c_value', 0)
+        current_aql = _coerce_numeric_input(inputs, 'aql', 0.25, float, 0.01, 10.0)
+        current_ltpd = _coerce_numeric_input(inputs, 'ltpd', 1.0, float, 0.1, 20.0)
+        current_alpha = _coerce_numeric_input(inputs, 'alpha', 5.0, float, 0.1, 100.0)
+        current_beta = _coerce_numeric_input(inputs, 'beta', 10.0, float, 0.1, 100.0)
+        current_c = _coerce_numeric_input(inputs, 'c_value', 0, int, 0)
         
         alternatives = "【AQL/LTPD設計による代替案の提案】\n\n"
         

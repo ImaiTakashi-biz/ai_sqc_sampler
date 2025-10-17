@@ -4,6 +4,7 @@
 """
 
 import os
+import sys
 import json
 from copy import deepcopy
 from tkinter import filedialog, messagebox
@@ -39,6 +40,26 @@ class ConfigManager:
     """設定管理クラス"""
 
     CONFIG_FILE = "app_config.json"
+    
+    def _get_config_file_path(self):
+        """設定ファイルのパス取得（PyInstaller対応）"""
+        if getattr(sys, 'frozen', False):
+            # PyInstallerでビルドされた場合
+            base_path = sys._MEIPASS
+            return os.path.join(base_path, 'app_config.json')
+        else:
+            # 開発環境の場合
+            return 'app_config.json'
+    
+    def _get_user_config_path(self):
+        """ユーザー設定ファイルのパス取得（PyInstaller対応）"""
+        if getattr(sys, 'frozen', False):
+            # PyInstallerでビルドされた場合、実行ファイルと同じディレクトリ
+            base_path = os.path.dirname(sys.executable)
+            return os.path.join(base_path, 'app_config.json')
+        else:
+            # 開発環境の場合
+            return 'app_config.json'
 
     DEFAULT_CONFIG = {
         "database_path": "不良情報記録.accdb",
@@ -60,12 +81,8 @@ class ConfigManager:
         self.config["inspection_mode"] = "standard"
         # 検査区分の設定値は上書きせず、default_*項目のみ標準検査の値に更新
         self._sync_legacy_defaults_for_startup()
-        # 設定ファイルが存在しない場合は保存
-        if not os.path.exists(self.CONFIG_FILE):
-            self.save_config()
-        else:
-            # 起動時の検査区分を標準検査に設定して保存
-            self.save_config()
+        # 設定ファイルの自動生成を完全に無効化
+        # ユーザーが明示的に設定を変更した場合のみ保存される
 
     # ------------------------------------------------------------------
     # 設定ファイルの読み書き
@@ -73,15 +90,32 @@ class ConfigManager:
     def _load_config(self):
         """設定ファイルの読み込み"""
         try:
-            if os.path.exists(self.CONFIG_FILE):
-                with open(self.CONFIG_FILE, "r", encoding="utf-8") as handle:
+            # まず埋め込まれた設定ファイルを読み込み
+            embedded_config_path = self._get_config_file_path()
+            user_config_path = self._get_user_config_path()
+            
+            # 埋め込まれた設定ファイルを読み込み
+            if os.path.exists(embedded_config_path):
+                with open(embedded_config_path, "r", encoding="utf-8") as handle:
                     loaded = json.load(handle)
+            else:
+                # 埋め込まれたファイルがない場合はデフォルト設定を使用
+                loaded = deepcopy(self.DEFAULT_CONFIG)
+            
+            # ユーザー設定ファイルが存在する場合は上書き
+            if os.path.exists(user_config_path):
+                with open(user_config_path, "r", encoding="utf-8") as handle:
+                    user_loaded = json.load(handle)
+                # ユーザー設定で上書き
+                for key, value in user_loaded.items():
+                    if key != "inspection_presets":
+                        loaded[key] = value
 
-                merged = deepcopy(self.DEFAULT_CONFIG)
-                for key, value in loaded.items():
-                    if key == "inspection_presets":
-                        continue
-                    merged[key] = value
+            merged = deepcopy(self.DEFAULT_CONFIG)
+            for key, value in loaded.items():
+                if key == "inspection_presets":
+                    continue
+                merged[key] = value
 
                 presets = deepcopy(self.DEFAULT_CONFIG["inspection_presets"])
                 user_presets = loaded.get("inspection_presets", {})
@@ -136,7 +170,8 @@ class ConfigManager:
     def save_config(self):
         """設定ファイルの保存"""
         try:
-            with open(self.CONFIG_FILE, "w", encoding="utf-8") as handle:
+            user_config_path = self._get_user_config_path()
+            with open(user_config_path, "w", encoding="utf-8") as handle:
                 json.dump(self.config, handle, ensure_ascii=False, indent=2)
             return True
         except Exception as exc:

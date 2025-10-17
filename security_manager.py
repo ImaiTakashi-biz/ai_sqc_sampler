@@ -4,33 +4,20 @@
 """
 
 import os
+import sys
 import hashlib
 import base64
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-import logging
 
 
 class SecurityManager:
     """セキュリティ管理クラス"""
     
     def __init__(self):
-        self.logger = self._setup_logger()
         self._key = None
     
-    def _setup_logger(self):
-        """セキュリティログの設定"""
-        logger = logging.getLogger('security')
-        logger.setLevel(logging.INFO)
-        
-        if not logger.handlers:
-            handler = logging.FileHandler('security.log', encoding='utf-8')
-            formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
-        
-        return logger
     
     def _get_encryption_key(self):
         """暗号化キーの取得または生成"""
@@ -73,7 +60,7 @@ class SecurityManager:
             encrypted_data = fernet.encrypt(data.encode())
             return base64.urlsafe_b64encode(encrypted_data).decode()
         except Exception as e:
-            self.logger.error(f"暗号化エラー: {e}")
+            # ログ機能を無効化
             return data  # 暗号化に失敗した場合は平文を返す
     
     def decrypt_sensitive_data(self, encrypted_data):
@@ -85,7 +72,7 @@ class SecurityManager:
             decrypted_data = fernet.decrypt(decoded_data)
             return decrypted_data.decode()
         except Exception as e:
-            self.logger.error(f"復号化エラー: {e}")
+            # ログ機能を無効化
             return encrypted_data  # 復号化に失敗した場合は元のデータを返す
     
     def sanitize_path(self, path):
@@ -97,7 +84,7 @@ class SecurityManager:
         dangerous_chars = ['..', '~', '$', '`', '|', '&', ';', '(', ')', '<', '>']
         for char in dangerous_chars:
             if char in path:
-                self.logger.warning(f"危険な文字が検出されました: {char} in {path}")
+                # ログ機能を無効化
                 return None
         
         # パスの正規化
@@ -105,7 +92,7 @@ class SecurityManager:
             normalized_path = os.path.normpath(path)
             return normalized_path
         except Exception as e:
-            self.logger.error(f"パス正規化エラー: {e}")
+            # ログ機能を無効化
             return None
     
     def validate_file_access(self, file_path):
@@ -132,7 +119,7 @@ class SecurityManager:
             return True, "OK"
             
         except Exception as e:
-            self.logger.error(f"ファイルアクセス検証エラー: {e}")
+            # ログ機能を無効化
             return False, "ファイルアクセスエラー"
     
     def sanitize_error_message(self, error_message):
@@ -154,8 +141,9 @@ class SecurityManager:
         return sanitized
     
     def log_security_event(self, event_type, details):
-        """セキュリティイベントのログ記録"""
-        self.logger.info(f"SECURITY_EVENT: {event_type} - {details}")
+        """セキュリティイベントのログ記録（無効化）"""
+        # ログ機能を無効化
+        pass
     
     def validate_input(self, input_data, input_type):
         """入力値の検証"""
