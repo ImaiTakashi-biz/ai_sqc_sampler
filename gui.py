@@ -65,6 +65,7 @@ class App(tk.Tk):
         # --- ウィジェットの構築 ---
         self._create_widgets()
         self._bind_shortcuts()
+        self.protocol("WM_DELETE_WINDOW", self._on_close_request)
 
     def _resolve_resource_path(self, relative_path: str) -> Path | None:
         """PyInstaller 環境でも参照可能なリソースパスを返す。"""
@@ -91,6 +92,14 @@ class App(tk.Tk):
             self.iconphoto(True, self._icon_image)
         except Exception:
             self._icon_image = None
+
+    def _on_close_request(self) -> None:
+        """ウィンドウの閉じる操作をコントローラーに委譲。"""
+        controller = getattr(self, "controller", None)
+        if controller and hasattr(controller, "handle_app_close"):
+            controller.handle_app_close()
+        else:
+            self.destroy()
 
     def _center_window(self):
         self.update_idletasks()

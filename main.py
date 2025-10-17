@@ -66,7 +66,7 @@ class MainController:
             self._cleanup_resources()
     
 # _schedule_memory_optimization method removed (logging disabled)
-    
+
     def _cleanup_resources(self):
         """リソースのクリーンアップ"""
         try:
@@ -80,6 +80,32 @@ class MainController:
             
         except Exception as e:
             error_handler.handle_error(ErrorCode.SYSTEM_ERROR, e)
+
+    def handle_app_close(self):
+        """ウィンドウの閉じる操作を集中処理"""
+        if getattr(self, "_is_closing", False):
+            return
+        self._is_closing = True
+
+        try:
+            if hasattr(self, 'progress_manager'):
+                try:
+                    self.progress_manager.close_progress_window()
+                except Exception:
+                    pass
+
+            if hasattr(self, 'app'):
+                try:
+                    self.app.quit()
+                except Exception:
+                    pass
+                try:
+                    self.app.destroy()
+                except Exception:
+                    pass
+        finally:
+            # mainloop が終了すると run() 側の finally が実行される
+            pass
 
     def start_calculation_thread(self):
         """計算処理を別スレッドで開始"""
@@ -575,11 +601,13 @@ def main():
     try:
         controller = MainController()
         controller.run()
+        return 0
     except Exception as e:
         security_manager = SecurityManager()
         sanitized_error = security_manager.sanitize_error_message(str(e))
         messagebox.showerror("アプリケーションエラー", f"アプリケーションの起動中にエラーが発生しました:\n{sanitized_error}")
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
